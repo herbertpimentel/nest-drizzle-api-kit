@@ -1,0 +1,320 @@
+---
+to: <%= commonQuery %>
+---
+<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+import { and, eq, gt, gte, ilike, inArray, isNotNull, isNull, like, lt, lte, ne, or, type SQL } from 'drizzle-orm';
+
+export type QueryParamValue = string | string[] | undefined;
+export type SupportedFilterOperator =
+  | 'eq'
+  | 'ne'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'like'
+  | 'ilike'
+  | 'in'
+  | 'isNull'
+  | 'notNull';
+export type ParsedFilter = {
+  field: string;
+  operator: SupportedFilterOperator;
+  value?: unknown;
+};
+export type SearchNode =
+  | { kind: 'condition'; filter: ParsedFilter }
+  | { kind: 'group'; operator: 'and' | 'or'; nodes: SearchNode[] };
+
+export function asArray(value: QueryParamValue): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => item.split(',')).map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  return [];
+}
+
+export function toPositiveNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  return fallback;
+}
+
+export function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function parseSearchInput(value: unknown): unknown {
+  if (isRecord(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const candidates = [value.trim()];
+
+  try {
+    const decoded = decodeURIComponent(value.trim());
+    if (!candidates.includes(decoded)) {
+      candidates.push(decoded);
+    }
+  } catch {
+    // keep trying raw input
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return undefined;
+}
+
+export function normalizeFilterOperator(rawOperator: string): SupportedFilterOperator | null {
+  const value = rawOperator.replace(/^\$/, '');
+  switch (value) {
+    case 'eq':
+      return 'eq';
+    case 'ne':
+      return 'ne';
+    case 'gt':
+      return 'gt';
+    case 'gte':
+      return 'gte';
+    case 'lt':
+      return 'lt';
+    case 'lte':
+      return 'lte';
+    case 'like':
+      return 'like';
+    case 'cont':
+    case 'ilike':
+      return 'ilike';
+    case 'in':
+      return 'in';
+    case 'isnull':
+      return 'isNull';
+    case 'notnull':
+      return 'notNull';
+    default:
+      return null;
+  }
+}
+
+export function toSearchNode(value: unknown): SearchNode | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const nodes: SearchNode[] = [];
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (key === '$and' || key === '$or') {
+      if (!Array.isArray(rawValue)) {
+        continue;
+      }
+
+      const nestedNodes = rawValue.map((entry) => toSearchNode(entry)).filter(isPresent);
+      if (nestedNodes.length > 0) {
+        nodes.push({
+          kind: 'group',
+          operator: key === '$and' ? 'and' : 'or',
+          nodes: nestedNodes,
+        });
+      }
+      continue;
+    }
+
+    if (isRecord(rawValue)) {
+      for (const [rawOperator, operatorValue] of Object.entries(rawValue)) {
+        const operator = normalizeFilterOperator(rawOperator);
+        if (!operator) {
+          continue;
+        }
+
+        nodes.push({
+          kind: 'condition',
+          filter: {
+            field: key,
+            operator,
+            value: operatorValue,
+          },
+        });
+      }
+      continue;
+    }
+
+    nodes.push({
+      kind: 'condition',
+      filter: {
+        field: key,
+        operator: 'eq',
+        value: rawValue,
+      },
+    });
+  }
+
+  if (nodes.length === 0) {
+    return null;
+  }
+
+  if (nodes.length === 1) {
+    return nodes[0] ?? null;
+  }
+
+  return {
+    kind: 'group',
+    operator: 'and',
+    nodes,
+  };
+}
+
+export function buildAllowedColumnCondition(
+  column: unknown,
+  operator: SupportedFilterOperator,
+  value: unknown,
+  allowedOperators: readonly SupportedFilterOperator[],
+): SQL<unknown> | null {
+  if (!allowedOperators.includes(operator)) {
+    return null;
+  }
+
+  switch (operator) {
+    case 'eq':
+      return eq(column as never, value as never);
+    case 'ne':
+      return ne(column as never, value as never);
+    case 'gt':
+      return gt(column as never, value as never);
+    case 'gte':
+      return gte(column as never, value as never);
+    case 'lt':
+      return lt(column as never, value as never);
+    case 'lte':
+      return lte(column as never, value as never);
+    case 'like':
+      return like(column as never, String(value));
+    case 'ilike':
+      return ilike(column as never, String(value));
+    case 'in':
+      return inArray(
+        column as never,
+        Array.isArray(value) ? value : String(value).split(',').map((item) => item.trim()),
+      );
+    case 'isNull':
+      return isNull(column as never);
+    case 'notNull':
+      return isNotNull(column as never);
+    default:
+      return null;
+  }
+}
+
+export function buildSearchWhere(
+  node: SearchNode | null,
+  resolveCondition: (filter: ParsedFilter) => SQL<unknown> | null,
+): SQL<unknown> | null {
+  if (!node) {
+    return null;
+  }
+
+  if (node.kind === 'condition') {
+    return resolveCondition(node.filter);
+  }
+
+  const conditions = node.nodes.map((child) => buildSearchWhere(child, resolveCondition)).filter(isPresent);
+  if (conditions.length === 0) {
+    return null;
+  }
+
+  if (conditions.length === 1) {
+    return conditions[0] ?? null;
+  }
+
+  return node.operator === 'or' ? or(...conditions) ?? null : and(...conditions) ?? null;
+}
+
+export function buildRequestedRelations<T extends string>(
+  includeValue: QueryParamValue,
+  relationNames: readonly T[],
+): Partial<Record<T, true>> | undefined {
+  if (relationNames.length === 0) {
+    return undefined;
+  }
+
+  const requested = new Set(asArray(includeValue));
+  const withRelations: Partial<Record<T, true>> = {};
+
+  for (const relationName of relationNames) {
+    if (requested.has(relationName)) {
+      withRelations[relationName] = true;
+    }
+  }
+
+  return Object.keys(withRelations).length > 0 ? withRelations : undefined;
+}
+
+export abstract class GeneratedResourceQueryBase {
+  protected buildWhere(
+    searchValue: unknown,
+    resolveCondition: (filter: ParsedFilter) => SQL<unknown> | null,
+    extraCondition?: SQL<unknown>,
+  ): SQL<unknown> | undefined {
+    const searchNode = toSearchNode(parseSearchInput(searchValue));
+    const searchCondition = buildSearchWhere(searchNode, resolveCondition);
+    const parts = [
+      searchCondition?.if(Boolean(searchCondition)),
+      extraCondition?.if(Boolean(extraCondition)),
+    ].filter(isPresent);
+
+    return parts.length > 0 ? and(...parts) : undefined;
+  }
+
+  protected buildOrderBy<T>(
+    sortValue: QueryParamValue,
+    resolveSortClause: (fieldName: string, isDesc: boolean) => T | null,
+    defaultOrderBy: T[],
+  ): T[] {
+    const orderByClauses = asArray(sortValue)
+      .map((part) => this.toOrderByClause(part, resolveSortClause))
+      .filter(isPresent);
+
+    return orderByClauses.length > 0 ? orderByClauses : defaultOrderBy;
+  }
+
+  private toOrderByClause<T>(
+    part: string,
+    resolveSortClause: (fieldName: string, isDesc: boolean) => T | null,
+  ): T | null {
+    const tuple = part.includes(',') ? part.split(',').map((item) => item.trim()) : [part];
+    const [fieldToken, orderToken] = tuple;
+    if (!fieldToken) {
+      return null;
+    }
+
+    const isDesc = fieldToken.startsWith('-') || orderToken?.toUpperCase() === 'DESC';
+    const fieldName = fieldToken.startsWith('-') ? fieldToken.slice(1) : fieldToken;
+
+    return resolveSortClause(fieldName, isDesc);
+  }
+}

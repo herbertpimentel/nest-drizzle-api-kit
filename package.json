@@ -1,0 +1,56 @@
+{
+  "name": "nest-drizzle-api-kit",
+  "version": "0.2.0",
+  "description": "Compile-time NestJS REST resource generator for Drizzle/Postgres, powered by Hygen templates.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "nest-drizzle-api-kit": "dist/cli/bin.js"
+  },
+  "files": [
+    "dist",
+    "_templates",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rimraf dist",
+    "dev": "ts-node src/cli/bin.ts watch",
+    "generate": "ts-node src/cli/bin.ts generate",
+    "check": "ts-node src/cli/bin.ts check",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/swagger": "^7.0.0 || ^8.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "drizzle-orm": "^0.36.0"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "fast-glob": "^3.3.3",
+    "hygen": "^6.2.11",
+    "jiti": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    }
+  }
+}
