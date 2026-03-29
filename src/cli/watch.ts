@@ -1,8 +1,9 @@
 import chokidar from 'chokidar';
 import { generateCommand } from './commands';
+import { ensureConfigFileExists } from './config-file';
 
 export async function watchCommand(configPath?: string): Promise<void> {
-  const target = configPath ?? 'nest-drizzle-api-kit.config.ts';
+  const target = await ensureConfigFileExists(configPath);
   await generateCommand(target);
 
   const watcher = chokidar.watch([target, 'src/**/*.resource.ts'], {

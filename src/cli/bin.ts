@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { checkCommand, cleanCommand, generateCommand } from './commands';
+import { initCommand } from './init';
+import { scanCommand } from './scan';
 import { watchCommand } from './watch';
 
 async function main(): Promise<void> {
@@ -15,6 +17,12 @@ async function main(): Promise<void> {
       break;
     case 'check':
       await checkCommand(configPath);
+      break;
+    case 'init':
+      await initCommand(configPath);
+      break;
+    case 'scan':
+      await scanCommand(configPath);
       break;
     case 'clean':
       await cleanCommand(configPath);

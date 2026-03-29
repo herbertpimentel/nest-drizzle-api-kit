@@ -34,6 +34,7 @@
     "chokidar": "^4.0.3",
     "fast-glob": "^3.3.3",
     "hygen": "^6.2.11",
+    "inquirer": "^13.3.2",
     "jiti": "^2.6.1"
   },
   "devDependencies": {

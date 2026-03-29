@@ -4,7 +4,7 @@ Compile-time NestJS REST resource generator for Drizzle/Postgres.
 
 Uses **Hygen** templates for file generation. Resource and root-module output is produced for an API ready to use.
 
-Why ? Just because It boring as fuck to write such code 
+Why ? Just because It is boring as fuck to write such code 
 
 ## Current state
 
@@ -14,7 +14,7 @@ Implemented:
 - TS config and resource definition API
 - validation + normalization pipeline
 - Hygen-based generation pipeline
-- CLI commands: `generate`, `watch`, `check`, `clean`
+- CLI commands: `init`, `scan`, `generate`, `watch`, `check`, `clean`
 - runtime base classes
 - template-based generation for:
   - controller
@@ -23,18 +23,12 @@ Implemented:
   - DTOs
   - metadata
   - root module
-  - barrels
 
-Still intentionally lightweight:
-- deep Drizzle metadata inference
-- robust import-path resolution for user-provided filters/guards/base-query classes
 
 Current generated find path:
 - generates direct per-resource Drizzle query code
 - uses the target project's own schema/table types in generated services
 
-Current limitation:
-- `query.baseQuery` is not supported by the direct generated query path yet
 
 ## Install
 
@@ -43,6 +37,22 @@ npm install hygen nest-drizzle-api-kit
 ```
 
 ## Config
+
+Quick scaffold:
+
+```bash
+npx nest-drizzle-api-kit init
+```
+
+`init` setup your project with `nest-drizzle-api-kit.config.ts`, and then offers to scan Drizzle tables to scaffold your resources.
+
+Interactive table scan:
+
+```bash
+npx nest-drizzle-api-kit scan
+```
+
+`scan` looks for exported Drizzle table definitions, lets you choose which ones should become resource files, scaffolds those `*.resource.ts` files, so you don't have to do it manually.
 
 Minimal config:
 
@@ -58,7 +68,7 @@ export default defineApiKitConfig({
 ```
 
 `dbProviderToken` is required.
-Generated services inject the database using `@Inject('<token>')`, so yourt NestJS project must register a provider with that exact token.
+Generated services inject the database using `@Inject('<token>')`, so your NestJS project must register a provider with that exact token to save the world.
 
 Example:
 
