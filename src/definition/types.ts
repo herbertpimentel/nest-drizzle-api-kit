@@ -190,7 +190,6 @@ export type ResourceOpenApiDefinition = {
 export type ResourceDefinition = {
   name: string;
   table: AnyPgTable;
-  relations?: unknown;
   route?: ResourceRouteDefinition;
   endpoints?: ResourceEndpointsDefinition;
   dto?: ResourceDtoDefinition;

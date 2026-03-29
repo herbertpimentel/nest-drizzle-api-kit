@@ -31,10 +31,10 @@ describe('scanCommand helpers', () => {
 
       const usersResourceText = await fs.readFile(usersResourcePath, 'utf8');
       expect(usersResourceText).toContain("import { defineResource } from 'nest-drizzle-api-kit';");
-      expect(usersResourceText).toContain("import { users, usersRelations } from '../db/users';");
+      expect(usersResourceText).toContain("import { users } from '../db/users';");
       expect(usersResourceText).toContain("export const usersResource = defineResource({");
       expect(usersResourceText).toContain("name: 'user'");
-      expect(usersResourceText).toContain('relations: usersRelations');
+      expect(usersResourceText).toContain('table: users');
 
       const loadedConfig = await loadApiKitConfig();
       expect(loadedConfig.resources).toHaveLength(2);

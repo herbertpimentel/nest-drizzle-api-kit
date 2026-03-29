@@ -12,7 +12,6 @@ type DiscoveredTable = {
   sourceFileRelative: string;
   tableExportName: string;
   tableDbName: string;
-  relationExportName?: string;
   resourceName: string;
   resourceConstName: string;
   resourceFileRelative: string;
@@ -70,32 +69,6 @@ function getCallName(expression: ts.Expression): string | null {
   return null;
 }
 
-function getExpressionSegments(expression: ts.Expression): string[] | null {
-  if (
-    ts.isAsExpression(expression)
-    || ts.isTypeAssertionExpression(expression)
-    || ts.isParenthesizedExpression(expression)
-    || ts.isNonNullExpression(expression)
-  ) {
-    return getExpressionSegments(expression.expression);
-  }
-
-  if (ts.isIdentifier(expression)) {
-    return [expression.text];
-  }
-
-  if (ts.isPropertyAccessExpression(expression)) {
-    const parent = getExpressionSegments(expression.expression);
-    if (!parent) {
-      return null;
-    }
-
-    return [...parent, expression.name.text];
-  }
-
-  return null;
-}
-
 function getStringLiteralValue(expression: ts.Expression | undefined): string | null {
   if (!expression) {
     return null;
@@ -147,16 +120,15 @@ function inferResourceFileName(tableDbName: string, tableExportName: string): st
 }
 
 function buildResourceFileContents(table: DiscoveredTable): string {
-  const importNames = [table.tableExportName, ...(table.relationExportName ? [table.relationExportName] : [])].join(', ');
   const importPath = stripExtension(ensureDotSlash(path.relative(path.dirname(table.resourceFileRelative), table.sourceFileRelative)));
 
   return `import { defineResource } from 'nest-drizzle-api-kit';
-import { ${importNames} } from '${importPath}';
+import { ${table.tableExportName} } from '${importPath}';
 
 export const ${table.resourceConstName} = defineResource({
   name: '${table.resourceName}',
   table: ${table.tableExportName},
-${table.relationExportName ? `  relations: ${table.relationExportName},\n` : ''}});
+});
 `;
 }
 
@@ -245,7 +217,6 @@ async function updateConfigResources(configPath: string, resourcePaths: string[]
 function parseTableFile(sourceFilePath: string, resourceDirectory: string): DiscoveredTable[] {
   const sourceText = ts.sys.readFile(sourceFilePath, 'utf8') ?? '';
   const sourceFile = ts.createSourceFile(sourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const relationsByTable = new Map<string, string>();
   const tables: DiscoveredTable[] = [];
 
   for (const statement of sourceFile.statements) {
@@ -265,16 +236,6 @@ function parseTableFile(sourceFilePath: string, resourceDirectory: string): Disc
 
       const exportName = declaration.name.text;
       const callName = getCallName(declaration.initializer.expression);
-
-      if (callName === 'relations') {
-        const [target] = declaration.initializer.arguments;
-        const segments = target ? getExpressionSegments(target) : null;
-        const tableIdentifier = segments?.at(-1);
-        if (tableIdentifier) {
-          relationsByTable.set(tableIdentifier, exportName);
-        }
-        continue;
-      }
 
       if (!TABLE_BUILDERS.has(callName ?? '')) {
         continue;
@@ -299,10 +260,7 @@ function parseTableFile(sourceFilePath: string, resourceDirectory: string): Disc
     }
   }
 
-  return tables.map((table) => {
-    const relationExportName = relationsByTable.get(table.tableExportName);
-    return relationExportName ? { ...table, relationExportName } : table;
-  });
+  return tables;
 }
 
 export async function discoverDrizzleTables(configPath = 'nest-drizzle-api-kit.config.ts'): Promise<DiscoveredTable[]> {
