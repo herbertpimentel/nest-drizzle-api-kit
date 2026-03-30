@@ -297,7 +297,7 @@ Current engine support:
 
 Default behavior is intentionally minimal:
 - if a resource declares `validation.schema` and you do nothing else, the generated code uses the built-in Zod engine automatically
-- You need to point to a Zod schema and the generated code will ensure it pass your validation schema before execute the underling endpoint code
+- you only need to point to a Zod schema, and the generated service will validate before executing the underlying operation
 - advanced custom-engine details live in [CUSTOM_VALIDATION.md](./CUSTOM_VALIDATION.md)
 
 Shared schema for the whole resource:
@@ -372,7 +372,7 @@ Current generated validation inputs are:
 - `update` -> `{ params, body }`
 - `delete` -> `{ params }`
 
-The generated controller adds a simple validation call before the underlying service operation. If the schema fails, it throws `BadRequestException` with your schema messages.
+The generated service emits explicit endpoint-specific schema selection and validates before the underlying operation. If the schema fails, it throws `BadRequestException` with your schema messages.
 
 
 ### Endpoint generation rules

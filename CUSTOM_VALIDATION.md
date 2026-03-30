@@ -31,7 +31,7 @@ That module should default-export either:
 
 ## Validation input shape
 
-The generated controller calls validation before the service call.
+The generated service calls validation before the service underlining operation.
 
 The input shape passed into validation depends on the endpoint:
 - `find` -> `query`
