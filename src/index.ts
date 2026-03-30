@@ -1,14 +1,5 @@
-export { ApiKitModule } from './runtime/api-kit.module';
 export { defineApiKitConfig } from './definition/define-api-kit-config';
 export { defineResource } from './definition/define-resource';
-
-export {
-  ResourceBaseQueryBase,
-  type ResourceBaseQuery,
-  type ResourceBaseQueryContext,
-} from './runtime/find/base-query';
-
-export { ResourceExtensionControllerBase } from './runtime/extensions/resource-extension-controller.base';
 
 export type {
   ApiKitModuleOptions,

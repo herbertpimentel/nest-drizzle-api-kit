@@ -1,4 +1,4 @@
-import type { DynamicModule, Type, CanActivate } from '@nestjs/common';
+import type { Type, CanActivate } from '@nestjs/common';
 
 export type AnyPgTable = unknown;
 export type DrizzleDb = {
@@ -269,8 +269,4 @@ export type ResourceDefinition = {
   query?: ResourceQueryDefinition;
   validation?: ResourceValidationDefinition;
   hooks?: ResourceHooksSourceDefinition;
-};
-
-export type ApiKitModuleFactory = {
-  forRoot(options: ApiKitModuleOptions): DynamicModule;
 };

@@ -15,7 +15,6 @@ Implemented:
 - validation + hooks pipeline
 - Hygen-based generation pipeline
 - CLI commands: `init`, `scan`, `generate`, `watch`, `check`, `clean`
-- runtime base classes
 - template-based generation for:
   - controller
   - service

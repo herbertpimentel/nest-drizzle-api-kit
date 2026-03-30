@@ -16,6 +16,12 @@ const commonQueryImports = [
   'GeneratedResourceQueryBase',
   ...(paginationEnabled ? ['toPositiveNumber'] : []),
 ];
+const dbType = context.imports.dbSchemaAccessExpression
+  ? 'NodePgDatabase<typeof schema>'
+  : `NodePgDatabase<{ ${context.imports.tableQueryName}: typeof ${context.imports.tableAccessExpression} }>`;
+const findManyReturnType = paginationEnabled
+  ? `PaginatedResult<${context.resource.classNames.responseDto}>`
+  : `${context.resource.classNames.responseDto}[]`;
 if (sorts.length > 0) drizzleImports.push('asc', 'desc');
 %><%= context.generatedHeader %>
 import { <%= drizzleImports.join(', ') %> } from 'drizzle-orm';
@@ -38,12 +44,12 @@ import type { <%= context.resource.classNames.responseDto %> } from './dto/<%= c
 
 export class <%= context.resource.classNames.query %> extends GeneratedResourceQueryBase {
   constructor(
-    private readonly db: <% if (context.imports.dbSchemaAccessExpression) { %>NodePgDatabase<typeof schema><% } else { %>NodePgDatabase<{ <%= context.imports.tableQueryName %>: typeof <%= context.imports.tableAccessExpression %> }><% } %>,
+    private readonly db: <%- dbType %>,
   ) {
     super();
   }
 
-  async findMany(query: <%= context.resource.classNames.findQueryDto %>): Promise<<% if (paginationEnabled) { %>PaginatedResult<<%= context.resource.classNames.responseDto %>><% } else { %><%= context.resource.classNames.responseDto %>[]<% } %>> {
+  async findMany(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%- findManyReturnType %>> {
 <% if (paginationEnabled) { %>    const page = toPositiveNumber(query.page, <%= context.resource.query.pagination.defaultPage %>);
     const pageSize = Math.min(
       toPositiveNumber(query.pageSize, <%= context.resource.query.pagination.defaultPageSize %>),

@@ -69,10 +69,10 @@ import { <%= context.resource.classNames.query %> } from './<%= context.resource
 export class <%= context.resource.classNames.service %> {
   constructor(
     @Inject(DB_PROVIDER_TOKEN)
-    private readonly db: <%= dbType %>,
+    private readonly db: <%- dbType %>,
   ) {}
 
-  async find(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%= findResultType %>> {
+  async find(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%- findResultType %>> {
 <% if (hasEndpointHooks('find')) { %><% if (hasValidation && context.resource.endpoints.find.enabled) { %>    const validatedQuery = validateResourceInput(findValidationSchema, query);
 <% } else { %>    const input = query;
 <% } %><% for (const hook of endpointHooks('find').before) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
