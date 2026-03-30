@@ -1,15 +1,16 @@
 ---
 to: <%= commonValidation %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+%><%= context.generatedHeader %>
 import { BadRequestException } from '@nestjs/common';
-<% if (context.validation?.engineName === 'custom') { %><% if (context.validation.engineImportKind === 'default') { %>import <%= context.validation.engineImportName %> from '<%= context.validation.engineImportPath %>';
+<% if (context.validation?.engineAccessExpression) { %><% if (context.validation.engineImportKind === 'default') { %>import <%= context.validation.engineImportName %> from '<%= context.validation.engineImportPath %>';
 <% } else if (context.validation.engineImportKind === 'namespace') { %>import * as <%= context.validation.engineImportName %> from '<%= context.validation.engineImportPath %>';
 <% } else if (context.validation.engineImportName !== context.validation.engineImportSourceName) { %>import { <%= context.validation.engineImportSourceName %> as <%= context.validation.engineImportName %> } from '<%= context.validation.engineImportPath %>';
 <% } else { %>import { <%= context.validation.engineImportName %> } from '<%= context.validation.engineImportPath %>';
 <% } %><% } %>
-
-type ResourceEndpointName = 'find' | 'findOne' | 'create' | 'update' | 'delete';
 
 type ValidationResult =
   | { success: true; data: unknown }
@@ -28,20 +29,6 @@ type ZodLikeSchema = {
   safeParse: (input: unknown) => { success: boolean; data?: unknown; error?: { issues?: unknown } };
 };
 
-const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
-
-function isEndpointSchemaMap(value: unknown): value is Partial<Record<ResourceEndpointName, unknown>> {
-  return typeof value === 'object' && value !== null && endpointNames.some((endpoint) => endpoint in value);
-}
-
-export function resolveResourceValidationSchema(schemaSource: unknown, endpoint: ResourceEndpointName): unknown {
-  if (isEndpointSchemaMap(schemaSource)) {
-    return schemaSource[endpoint];
-  }
-
-  return schemaSource;
-}
-
 const zodValidationEngine: ValidationEngine = {
   validate({ schema, input }: ValidationContext): ValidationResult {
     if (typeof schema !== 'object' || schema === null || !('safeParse' in schema) || typeof schema.safeParse !== 'function') {
@@ -58,7 +45,7 @@ const zodValidationEngine: ValidationEngine = {
   },
 };
 
-const validationEngine: ValidationEngine = <% if (context.validation?.engineName === 'custom') { %><%= context.validation.engineAccessExpression %><% } else { %>zodValidationEngine<% } %>;
+const validationEngine: ValidationEngine = <% if (context.validation?.engineAccessExpression) { %><%= context.validation.engineAccessExpression %><% } else { %>zodValidationEngine<% } %>;
 
 export function validateResourceInput<T>(schema: unknown, input: T): T {
   if (!schema) {

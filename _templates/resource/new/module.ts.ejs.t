@@ -1,7 +1,10 @@
 ---
 to: <%= module %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+%><%= context.generatedHeader %>
 import { Module } from '@nestjs/common';
 import { <%= context.resource.classNames.controller %> } from './<%= context.resource.fileNames.controller.replace('.ts', '') %>';
 import { <%= context.resource.classNames.service %> } from './<%= context.resource.fileNames.service.replace('.ts', '') %>';

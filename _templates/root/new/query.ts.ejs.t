@@ -1,7 +1,10 @@
 ---
 to: <%= commonQuery %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+%><%= context.generatedHeader %>
 import { and, eq, gt, gte, ilike, inArray, isNotNull, isNull, like, lt, lte, ne, or, type SQL } from 'drizzle-orm';
 
 export type QueryParamValue = string | string[] | undefined;

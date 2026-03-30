@@ -2,64 +2,71 @@
 
 This document covers the hook extension points of `nest-drizzle-api-kit`.
 
-If you only want the default path, stay in the main [README](./README.md): define a hook object, point `config.hooks` or `resource.hooks` to it, and the generated service will emit explicit `await hook(context)` calls around the operation.
+If you only want the common path, stay in the main [README](./README.md): define config hooks in `defineApiKitConfig({ hooks })`, define function hooks in `defineResource({ functions: { ... } })`, and the generated service will emit direct `await hook(context)` calls around the operation.
 
 ## Default model
 
-Hooks are plain functions.
+Hooks are configured in two places:
+- config-level `hooks`
+- function-level `functions.<name>.hooks`
 
-They run in the generated service:
-- after validation
-- before the underlying query or mutation
-- and again after the operation when `after` hooks are configured
-
-You can configure them:
-- globally in the config with `hooks`
-- per resource with `resource.hooks`
-
-## Hook definition shape
-
-The hook shape is the same in config and resources.
+Config hooks wrap every resource or one specific function:
 
 ```ts
-import type { ResourceHooksDefinition } from 'nest-drizzle-api-kit';
-
-export const userHooks = {
-  before: [measureExecution],
-  after: [trackMetrics],
-  create: {
-    before: [normalizeUserInput],
-    after: [publishCreatedEvent],
+export default defineApiKitConfig({
+  outputPath: './src/generated/api',
+  dbProviderToken: 'DRIZZLE_DB',
+  hooks: {
+    before: ['./src/resources/hooks/measure-execution'],
+    after: ['./src/resources/hooks/track-metrics'],
+    create: {
+      before: [
+        {
+          path: './src/resources/hooks/attach-audit-stamp',
+          name: 'attachAuditStamp',
+          description: 'Attach audit metadata to the validated create input.',
+        },
+      ],
+    },
   },
-  update: {
-    before: [checkCanUpdate],
-  },
-} satisfies ResourceHooksDefinition;
+  resources: [usersResource],
+});
 ```
 
-Supported keys:
-- `before`
-- `after`
-- `find`
-- `findOne`
-- `create`
-- `update`
-- `delete`
+Resource function hooks stay local to that function:
 
-Each endpoint key can contain:
-- `before`
-- `after`
+```ts
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  functions: {
+    create: {
+      hooks: {
+        before: [
+          './hooks/measure-execution',
+          {
+            path: './hooks/normalize-user-input',
+            name: 'normalizeUserInput',
+            description: 'Normalize the create payload before persisting it.',
+          },
+        ],
+        after: ['./hooks/publish-created-event'],
+      },
+    },
+  },
+});
+```
 
 ## Hook entry forms
 
 A hook entry can be:
-- a hook function
+- a string path to the hook file
 - or an object with metadata
 
-Plain function:
+String path:
 
 ```ts
-before: [measureExecution]
+before: ['./hooks/measure-execution']
 ```
 
 Metadata form:
@@ -67,18 +74,20 @@ Metadata form:
 ```ts
 before: [
   {
-    use: normalizeUserInput,
+    path: './hooks/normalize-user-input',
     name: 'normalizeUserInput',
     description: 'Normalize the create payload before persisting it.',
   },
 ]
 ```
 
+The hook module should default-export the hook function.
+
 Metadata fields:
-- `use`
-  The actual hook function.
+- `path`
+  Path to the hook file.
 - `name`
-  Optional emitted constant name in generated code. If omitted, the generator uses the function name when available.
+  Optional friendly emitted import/call name.
 - `description`
   Optional comment emitted above the generated hook call.
 
@@ -89,7 +98,7 @@ Hook functions receive a mutable context object:
 ```ts
 import type { ResourceHookContext } from 'nest-drizzle-api-kit';
 
-export async function normalizeUserInput(context: ResourceHookContext) {
+export default async function normalizeUserInput(context: ResourceHookContext) {
   const input = context.input as { email?: string };
 
   if (typeof input.email === 'string') {
@@ -100,106 +109,76 @@ export async function normalizeUserInput(context: ResourceHookContext) {
 
 Context fields:
 - `db`
-  The generated service database instance. When the endpoint is transactional, this is the Drizzle transaction object for that execution.
+  The generated service database instance. When the function is transactional, this is the Drizzle transaction object for that execution.
 - `resourceName`
   The resource name from `defineResource({ name })`.
-- `endpoint`
+- `functionName`
   One of `find`, `findOne`, `create`, `update`, `delete`.
 - `state`
   A fresh `Map<string, unknown>` created for that one execution and shared across every hook in that method call.
 - `input`
-  The validated endpoint input when validation exists, otherwise the raw generated input.
+  The validated input when validation exists, otherwise the raw generated input.
 - `result`
   Available after the underlying operation. `after` hooks can read or mutate it.
 
 Hooks can be sync or async. The generated service always awaits them.
 
-## Transactional endpoints
+## Hook ordering
 
-Only mutable endpoints support transactions:
-- `create`
-- `update`
-- `delete`
+The generated order is:
+- `config.before`
+- `config.<function>.before`
+- `resource.functions.<function>.hooks.before`
+- generated operation
+- `resource.functions.<function>.hooks.after`
+- `config.<function>.after`
+- `config.after`
 
-Enable it per endpoint:
-
-```ts
-export const usersResource = defineResource({
-  name: 'user',
-  table: users,
-  endpoints: {
-    create: {
-      transactional: true,
-    },
-    update: {
-      transactional: true,
-    },
-  },
-  hooks: userHooks,
-});
-```
-
-When `transactional: true` is enabled:
-- the generated service wraps the method in `this.db.transaction(async (tx) => { ... })`
-- all hooks for that endpoint run inside the same transaction
-- `context.db` points to `tx`
-- the generated write uses `tx.insert(...)`, `tx.update(...)`, or `tx.delete(...)`
-- if anything throws during hooks or the generated write, Drizzle rolls back the transaction
-- if everything finishes successfully, Drizzle commits it
+That keeps config hooks as the outer wrapper and resource hooks as the local wrapper.
 
 ## Input shapes
 
-The input shape matches the same shapes used by validation:
+The hook input shape matches validation:
 - `find` -> query object
 - `findOne` -> `{ params, query }`
 - `create` -> body object
 - `update` -> `{ params, body }`
 - `delete` -> `{ params }`
 
-## Global and resource hooks together
+## Transactional functions
 
-Config hooks and resource hooks can be combined.
+Only mutable functions support transactions:
+- `create`
+- `update`
+- `delete`
 
-The generated order is:
-- `config.before`
-- `config.<endpoint>.before`
-- `resource.before`
-- `resource.<endpoint>.before`
-- generated operation
-- `resource.<endpoint>.after`
-- `resource.after`
-- `config.<endpoint>.after`
-- `config.after`
-
-That makes config hooks the outermost wrapper and resource hooks the more local wrapper.
-
-
-## Module path vs imported object
-
-Like validation, `hooks` can be configured as:
-- a string module path
-- an imported object reference
-
-Module path:
+Enable it per function:
 
 ```ts
-hooks: './users.hooks'
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  functions: {
+    create: {
+      transactional: true,
+      hooks: {
+        before: ['./hooks/normalize-user-input'],
+      },
+    },
+  },
+});
 ```
 
-That module should default-export the hook definition object.
-
-Imported reference:
-
-```ts
-import { userHooks } from './users.hooks';
-
-hooks: userHooks
-```
+When `transactional: true` is enabled:
+- the generated service wraps the method in `this.db.transaction(async (tx) => { ... })`
+- all hooks for that function run inside the same transaction
+- `context.db` points to `tx`
+- if anything throws during hooks or the generated write, Drizzle rolls back
+- if everything finishes successfully, Drizzle commits
 
 ## Recommended mental model
 
-- use hooks for cross-cutting behavior around the generated operation
-- use validation first, then let hooks work on already validated input
-- put reusable metrics/audit/timing hooks in config-level `hooks`
-- put business-specific behavior in `resource.hooks`
+- use config hooks for cross-cutting concerns like metrics, timing, and audit stamping
+- use function hooks for resource-specific behavior
+- let validation run first, then let hooks work on already validated input
 - use metadata only when you want clearer emitted names or comments

@@ -1,6 +1,7 @@
 @Delete(':id')
 @HttpCode(204)
-@ApiOperation({ operationId: '<%- r.endpoints.delete.operationId %>', summary: '<%- summary %>' })
-<%- signature %>
+<% if (guardsDecorator) { %><%- guardsDecorator %>
+<% } %><% if (docsDecorator) { %><%- docsDecorator %>
+<% } %><%- signature %>
 <%- call %>
 }

@@ -1,12 +1,17 @@
 ---
-to: <%= createDto %>
+to: <%= createInputDto %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+const definition = context.dto.createInput;
+%><% if (definition) { %><%= context.generatedHeader %>
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class <%= context.resource.classNames.createDto %> {
-<% for (const field of context.resource.generatedDtos.createFields) { %>
+export class <%= definition.className %> {
+<% for (const field of definition.fields ?? []) { %>
   @<%= field.optional ? 'ApiPropertyOptional' : 'ApiProperty' %>(<%- field.swaggerOptions.length > 0 || field.nullable ? `{ ${[...field.swaggerOptions, field.nullable ? 'nullable: true' : null].filter(Boolean).join(', ')} }` : '' %>)
   <%= field.name %><%= field.optional ? '?' : '!' %>: <%= field.createTsType %>;
 
 <% } %>}
+<% } %>

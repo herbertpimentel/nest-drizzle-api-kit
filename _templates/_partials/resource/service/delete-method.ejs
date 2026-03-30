@@ -1,13 +1,11 @@
   async delete(id: <%= idType %>): Promise<void> {
-<% if (hasHooks) { %><% if (validationEnabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
+<% if (hasHooks) { %><% if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id } });
 <% } else { %>    const input = { params: { id } };
-<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
-<% } %>
-<% if (transactional) { %>    return this.db.transaction(async (tx) => {
+<% } %><% if (transactional) { %>    return this.db.transaction(async (tx) => {
       const context = {
         db: tx,
-        resourceName: '<%= context.resource.name %>',
-        endpoint: 'delete' as const,
+        resourceName: '<%= resourceName %>',
+        functionName: 'delete' as const,
         state: new Map<string, unknown>(),
         input,
         result: undefined as void | undefined,
@@ -16,13 +14,12 @@
 <% for (const line of beforeHookLinesTransactional) { %><%= line %>
 <% } %>      await tx.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id));
 <% for (const line of afterHookLinesTransactional) { %><%= line %>
-<% } %>
-      return;
+<% } %>      return;
     });
 <% } else { %>    const context = {
       db: this.db,
-      resourceName: '<%= context.resource.name %>',
-      endpoint: 'delete' as const,
+      resourceName: '<%= resourceName %>',
+      functionName: 'delete' as const,
       state: new Map<string, unknown>(),
       input,
       result: undefined as void | undefined,
@@ -31,9 +28,8 @@
 <% for (const line of beforeHookLines) { %><%= line %>
 <% } %>    await this.db.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id));
 <% for (const line of afterHookLines) { %><%= line %>
-<% } %>
-    return;
-<% } %><% } else if (transactional) { %><% if (validationEnabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
+<% } %>    return;
+<% } %><% } else if (transactional) { %><% if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id } });
     return this.db.transaction(async (tx) => {
       await tx.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, input.params.id));
       return;
@@ -42,7 +38,7 @@
       await tx.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, id));
       return;
     });
-<% } %><% } else if (validationEnabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
+<% } %><% } else if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id } });
     await this.db.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, input.params.id));
 <% } else { %>    await this.db.delete(<%= table %>).where(eq(<%= table %>.<%= idFieldName %>, id));
 <% } %>  }

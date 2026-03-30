@@ -1,10 +1,12 @@
 import { defineResource } from '../../../src';
-import { tabelaCusta } from './tables';
+import { users } from '../../../examples/basic/src/db/users';
 
 export const validationStringResource = defineResource({
   name: 'validation-string',
-  table: tabelaCusta as any,
-  validation: {
-    schema: './validation-schemas',
+  table: users,
+  functions: {
+    create: {
+      validation: './validation-schemas',
+    },
   },
 });

@@ -1,7 +1,10 @@
 ---
 to: <%= commonTypes %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+%><%= context.generatedHeader %>
 
 export type PaginatedResult<T> = {
   items: T[];

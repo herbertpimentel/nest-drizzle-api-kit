@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { API_KIT_CONFIG_META_KEY } from '../definition/define-api-kit-config';
 import { API_KIT_RESOURCE_META_KEY } from '../definition/define-resource';
 import type { ApiKitConfig, ResourceDefinition } from '../definition/types';
+import type { ImportedValueSource } from './models';
 
 type ResourceInternalMeta = {
   sourceFile?: string;
@@ -20,13 +21,7 @@ type IdentifierImport = {
   sourceFile: string;
 };
 
-export type ResolvedImportedValueSource = {
-  sourceFile: string;
-  accessExpression: string;
-  importKind: 'default' | 'named' | 'namespace';
-  importName: string;
-  importSourceName: string;
-};
+export type ResolvedImportedValueSource = ImportedValueSource;
 
 export type ResolvedResourceSource = {
   sourceFile: string;
@@ -36,15 +31,7 @@ export type ResolvedResourceSource = {
 };
 
 export type ResolvedConfigSchemaSource = ResolvedImportedValueSource;
-export type ResolvedHooksSource = ResolvedImportedValueSource;
-export type ResolvedValidationEngineSource =
-  | {
-      kind: 'builtin';
-      name: 'zod';
-    }
-  | ({
-      kind: 'custom';
-    } & ResolvedImportedValueSource);
+export type ResolvedValidationEngineSource = ResolvedImportedValueSource;
 
 function visitNodes(node: ts.Node, cb: (node: ts.Node) => void): void {
   cb(node);
@@ -135,6 +122,25 @@ function findResourceObjectLiteral(sourceFile: ts.SourceFile, resourceName: stri
   return match;
 }
 
+function findConfigObjectLiteral(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | null {
+  let match: ts.ObjectLiteralExpression | null = null;
+
+  visitNodes(sourceFile, (node) => {
+    if (match || !ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== 'defineApiKitConfig') {
+      return;
+    }
+
+    const [arg] = node.arguments;
+    if (!arg || !ts.isObjectLiteralExpression(arg)) {
+      return;
+    }
+
+    match = arg;
+  });
+
+  return match;
+}
+
 function getProperty(objectLiteral: ts.ObjectLiteralExpression, propertyName: string): ts.Expression | null {
   const property = objectLiteral.properties.find(
     (entry): entry is ts.PropertyAssignment =>
@@ -165,25 +171,6 @@ function getNestedProperty(objectLiteral: ts.ObjectLiteralExpression, propertyPa
   }
 
   return current;
-}
-
-function findConfigObjectLiteral(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | null {
-  let match: ts.ObjectLiteralExpression | null = null;
-
-  visitNodes(sourceFile, (node) => {
-    if (match || !ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== 'defineApiKitConfig') {
-      return;
-    }
-
-    const [arg] = node.arguments;
-    if (!arg || !ts.isObjectLiteralExpression(arg)) {
-      return;
-    }
-
-    match = arg;
-  });
-
-  return match;
 }
 
 function getPropertyAccessSegments(expression: ts.Expression): string[] | null {
@@ -222,9 +209,12 @@ function toResolvedImportedValueSource(baseDir: string, imported: IdentifierImpo
   };
 }
 
-export function resolveResourceSource(resource: ResourceDefinition): ResolvedResourceSource {
-  const meta = getResourceMeta(resource);
-  const sourceFilePath = meta?.sourceFile;
+function loadResourceAst(resource: ResourceDefinition): {
+  sourceFilePath: string;
+  sourceFile: ts.SourceFile;
+  resourceObject: ts.ObjectLiteralExpression;
+} {
+  const sourceFilePath = getResourceMeta(resource)?.sourceFile;
   if (!sourceFilePath) {
     throw new Error(`Resource "${resource.name}" is missing source-file metadata.`);
   }
@@ -236,29 +226,135 @@ export function resolveResourceSource(resource: ResourceDefinition): ResolvedRes
     throw new Error(`Could not locate defineResource(...) call for resource "${resource.name}" in "${sourceFilePath}".`);
   }
 
+  return { sourceFilePath, sourceFile, resourceObject };
+}
+
+function loadConfigAst(config: ApiKitConfig): {
+  sourceFilePath: string;
+  sourceFile: ts.SourceFile;
+  configObject: ts.ObjectLiteralExpression;
+} {
+  const sourceFilePath = getConfigMeta(config)?.sourceFile;
+  if (!sourceFilePath) {
+    throw new Error('The config is missing source-file metadata.');
+  }
+
+  const sourceText = fs.readFileSync(sourceFilePath, 'utf8');
+  const sourceFile = ts.createSourceFile(sourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const configObject = findConfigObjectLiteral(sourceFile);
+  if (!configObject) {
+    throw new Error(`Could not locate defineApiKitConfig(...) call in "${sourceFilePath}".`);
+  }
+
+  return { sourceFilePath, sourceFile, configObject };
+}
+
+function resolveImportedExpressionSource(
+  sourceFilePath: string,
+  sourceFile: ts.SourceFile,
+  expression: ts.Expression | null,
+  errorLabel: string,
+): ResolvedImportedValueSource | null {
+  if (!expression) {
+    return null;
+  }
+
+  const accessSegments = getPropertyAccessSegments(expression);
+  if (!accessSegments || accessSegments.length === 0) {
+    throw new Error(`${errorLabel} must reference an imported identifier or property-access expression.`);
+  }
+
+  const [rootIdentifier, ...propertyPath] = accessSegments;
+  if (!rootIdentifier) {
+    throw new Error(`${errorLabel} has an invalid reference.`);
+  }
+
+  const imported = resolveImportedIdentifier(sourceFile, rootIdentifier);
+  if (!imported) {
+    throw new Error(`Could not resolve import for ${errorLabel} identifier "${rootIdentifier}" in "${sourceFilePath}".`);
+  }
+
+  return toResolvedImportedValueSource(path.dirname(sourceFilePath), imported, propertyPath);
+}
+
+export function resolveResourceFilePath(resource: ResourceDefinition): string {
+  const sourceFilePath = getResourceMeta(resource)?.sourceFile;
+  if (!sourceFilePath) {
+    throw new Error(`Resource "${resource.name}" is missing source-file metadata.`);
+  }
+
+  return sourceFilePath;
+}
+
+export function resolveConfigFilePath(config: ApiKitConfig): string {
+  const sourceFilePath = getConfigMeta(config)?.sourceFile;
+  if (!sourceFilePath) {
+    throw new Error('The config is missing source-file metadata.');
+  }
+
+  return sourceFilePath;
+}
+
+export function resolveResourceImportedValueSource(
+  resource: ResourceDefinition,
+  propertyPath: string[],
+  errorLabel: string,
+): ResolvedImportedValueSource | null {
+  const { sourceFilePath, sourceFile, resourceObject } = loadResourceAst(resource);
+  const expression = getNestedProperty(resourceObject, propertyPath);
+  return resolveImportedExpressionSource(sourceFilePath, sourceFile, expression, errorLabel);
+}
+
+export function resolveResourceImportedValueSources(
+  resource: ResourceDefinition,
+  propertyPath: string[],
+  errorLabel: string,
+): ResolvedImportedValueSource[] {
+  const { sourceFilePath, sourceFile, resourceObject } = loadResourceAst(resource);
+  const expression = getNestedProperty(resourceObject, propertyPath);
+  if (!expression) {
+    return [];
+  }
+
+  if (!ts.isArrayLiteralExpression(expression)) {
+    throw new Error(`${errorLabel} must be an array of imported identifiers or property-access expressions.`);
+  }
+
+  return expression.elements.map((element, index) => resolveImportedExpressionSource(
+    sourceFilePath,
+    sourceFile,
+    element,
+    `${errorLabel}[${index}]`,
+  )!).filter(Boolean);
+}
+
+export function resolveResourceSource(resource: ResourceDefinition): ResolvedResourceSource {
+  const { sourceFilePath, sourceFile, resourceObject } = loadResourceAst(resource);
   const tableExpression = getProperty(resourceObject, 'table');
   const tableAccessSegments = tableExpression ? getPropertyAccessSegments(tableExpression) : null;
   if (!tableAccessSegments || tableAccessSegments.length === 0) {
-    throw new Error(`Resource "${resource.name}" must reference the table with an identifier or property-access expression to generate plain service code.`);
+    throw new Error(`Resource "${resource.name}" must define a table reference.`);
   }
-
   const [tableRootIdentifier, ...tablePropertyPath] = tableAccessSegments;
   if (!tableRootIdentifier) {
     throw new Error(`Resource "${resource.name}" has an invalid table reference.`);
   }
-
   const tableImport = resolveImportedIdentifier(sourceFile, tableRootIdentifier);
   if (!tableImport) {
     throw new Error(`Could not resolve import for table identifier "${tableRootIdentifier}" in "${sourceFilePath}".`);
   }
-
   const tableAccessExpression = [tableImport.localName, ...tablePropertyPath].join('.');
   const tableQueryName = tablePropertyPath.at(-1) ?? tableImport.importName;
 
   return {
     sourceFile: sourceFilePath,
     tableAccessExpression,
-    table: tableImport,
+    table: {
+      kind: tableImport.kind,
+      importName: tableImport.importName,
+      localName: tableImport.localName,
+      sourceFile: tableImport.sourceFile,
+    },
     tableQueryName,
   };
 }
@@ -280,54 +376,21 @@ export function resolveDbSchemaType(config: ApiKitConfig): ResolvedConfigSchemaS
     };
   }
 
-  const configSourceFilePath = getConfigMeta(config)?.sourceFile;
-  if (!configSourceFilePath) {
-    throw new Error(
-      'dbSchema was provided as an object, but the config source file could not be determined. Use a string module path or load the config from a file.',
-    );
-  }
-
-  const sourceText = fs.readFileSync(configSourceFilePath, 'utf8');
-  const sourceFile = ts.createSourceFile(configSourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const configObject = findConfigObjectLiteral(sourceFile);
-  if (!configObject) {
-    throw new Error(`Could not locate defineApiKitConfig(...) call in "${configSourceFilePath}".`);
-  }
-
+  const { sourceFilePath, sourceFile, configObject } = loadConfigAst(config);
   const schemaExpression = getProperty(configObject, 'dbSchema');
-  const schemaAccessSegments = schemaExpression ? getPropertyAccessSegments(schemaExpression) : null;
-  if (!schemaAccessSegments || schemaAccessSegments.length === 0) {
-    throw new Error('dbSchema must reference an imported identifier or property-access expression, or be a string module path.');
-  }
-
-  const [schemaRootIdentifier, ...schemaPropertyPath] = schemaAccessSegments;
-  if (!schemaRootIdentifier) {
-    throw new Error('dbSchema has an invalid reference.');
-  }
-
-  const schemaImport = resolveImportedIdentifier(sourceFile, schemaRootIdentifier);
-  if (!schemaImport) {
-    throw new Error(`Could not resolve import for dbSchema identifier "${schemaRootIdentifier}" in "${configSourceFilePath}".`);
-  }
-
-  return toResolvedImportedValueSource(path.dirname(configSourceFilePath), schemaImport, schemaPropertyPath);
+  return resolveImportedExpressionSource(sourceFilePath, sourceFile, schemaExpression, 'dbSchema');
 }
 
 export function resolveValidationEngineSource(config: ApiKitConfig): ResolvedValidationEngineSource | null {
   const engine = config.validation?.engine;
   if (!engine || engine === 'zod') {
-    return engine === 'zod' ? { kind: 'builtin', name: 'zod' } : null;
+    return null;
   }
 
   const configSourceFilePath = getConfigMeta(config)?.sourceFile;
   if (typeof engine === 'string') {
-    if (engine === 'zod') {
-      return { kind: 'builtin', name: 'zod' };
-    }
-
     const baseDir = configSourceFilePath ? path.dirname(configSourceFilePath) : process.cwd();
     return {
-      kind: 'custom',
       sourceFile: path.resolve(baseDir, engine),
       accessExpression: '__apiKitValidationEngine',
       importKind: 'default',
@@ -336,191 +399,9 @@ export function resolveValidationEngineSource(config: ApiKitConfig): ResolvedVal
     };
   }
 
-  if (!configSourceFilePath) {
-    throw new Error(
-      'validation.engine was provided as an object, but the config source file could not be determined. Use a string module path or load the config from a file.',
-    );
-  }
-
-  const sourceText = fs.readFileSync(configSourceFilePath, 'utf8');
-  const sourceFile = ts.createSourceFile(configSourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const configObject = findConfigObjectLiteral(sourceFile);
-  if (!configObject) {
-    throw new Error(`Could not locate defineApiKitConfig(...) call in "${configSourceFilePath}".`);
-  }
-
+  const { sourceFilePath, sourceFile, configObject } = loadConfigAst(config);
   const engineExpression = getNestedProperty(configObject, ['validation', 'engine']);
-  const engineAccessSegments = engineExpression ? getPropertyAccessSegments(engineExpression) : null;
-  if (!engineAccessSegments || engineAccessSegments.length === 0) {
-    throw new Error('validation.engine must reference an imported identifier or property-access expression, or be a string module path.');
-  }
-
-  const [engineRootIdentifier, ...enginePropertyPath] = engineAccessSegments;
-  if (!engineRootIdentifier) {
-    throw new Error('validation.engine has an invalid reference.');
-  }
-
-  const engineImport = resolveImportedIdentifier(sourceFile, engineRootIdentifier);
-  if (!engineImport) {
-    throw new Error(`Could not resolve import for validation.engine identifier "${engineRootIdentifier}" in "${configSourceFilePath}".`);
-  }
-
-  return {
-    kind: 'custom',
-    ...toResolvedImportedValueSource(path.dirname(configSourceFilePath), engineImport, enginePropertyPath),
-  };
-}
-
-export function resolveConfigHooksSource(config: ApiKitConfig): ResolvedHooksSource | null {
-  const hooks = config.hooks;
-  if (!hooks) {
-    return null;
-  }
-
-  const configSourceFilePath = getConfigMeta(config)?.sourceFile;
-  if (typeof hooks === 'string') {
-    const baseDir = configSourceFilePath ? path.dirname(configSourceFilePath) : process.cwd();
-    return {
-      sourceFile: path.resolve(baseDir, hooks),
-      accessExpression: '__apiKitConfigHooks',
-      importKind: 'default',
-      importName: '__apiKitConfigHooks',
-      importSourceName: 'default',
-    };
-  }
-
-  if (!configSourceFilePath) {
-    throw new Error(
-      'hooks were provided as an object, but the config source file could not be determined. Use a string module path or load the config from a file.',
-    );
-  }
-
-  const sourceText = fs.readFileSync(configSourceFilePath, 'utf8');
-  const sourceFile = ts.createSourceFile(configSourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const configObject = findConfigObjectLiteral(sourceFile);
-  if (!configObject) {
-    throw new Error(`Could not locate defineApiKitConfig(...) call in "${configSourceFilePath}".`);
-  }
-
-  const hooksExpression = getProperty(configObject, 'hooks');
-  const hooksAccessSegments = hooksExpression ? getPropertyAccessSegments(hooksExpression) : null;
-  if (!hooksAccessSegments || hooksAccessSegments.length === 0) {
-    throw new Error('hooks must reference an imported identifier or property-access expression, or be a string module path.');
-  }
-
-  const [hooksRootIdentifier, ...hooksPropertyPath] = hooksAccessSegments;
-  if (!hooksRootIdentifier) {
-    throw new Error('hooks have an invalid reference.');
-  }
-
-  const hooksImport = resolveImportedIdentifier(sourceFile, hooksRootIdentifier);
-  if (!hooksImport) {
-    throw new Error(`Could not resolve import for hooks identifier "${hooksRootIdentifier}" in "${configSourceFilePath}".`);
-  }
-
-  return toResolvedImportedValueSource(path.dirname(configSourceFilePath), hooksImport, hooksPropertyPath);
-}
-
-export function resolveResourceValidationSchemaSource(resource: ResourceDefinition): ResolvedImportedValueSource | null {
-  const validationSchema = resource.validation?.schema;
-  if (!validationSchema) {
-    return null;
-  }
-
-  const meta = getResourceMeta(resource);
-  const sourceFilePath = meta?.sourceFile;
-  if (!sourceFilePath) {
-    throw new Error(`Resource "${resource.name}" is missing source-file metadata.`);
-  }
-
-  if (typeof validationSchema === 'string') {
-    return {
-      sourceFile: path.resolve(path.dirname(sourceFilePath), validationSchema),
-      accessExpression: '__apiKitValidationSchema',
-      importKind: 'default',
-      importName: '__apiKitValidationSchema',
-      importSourceName: 'default',
-    };
-  }
-
-  const sourceText = fs.readFileSync(sourceFilePath, 'utf8');
-  const sourceFile = ts.createSourceFile(sourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const resourceObject = findResourceObjectLiteral(sourceFile, resource.name);
-  if (!resourceObject) {
-    throw new Error(`Could not locate defineResource(...) call for resource "${resource.name}" in "${sourceFilePath}".`);
-  }
-
-  const schemaExpression = getNestedProperty(resourceObject, ['validation', 'schema']);
-  const schemaAccessSegments = schemaExpression ? getPropertyAccessSegments(schemaExpression) : null;
-  if (!schemaAccessSegments || schemaAccessSegments.length === 0) {
-    throw new Error(
-      `Resource "${resource.name}" validation.schema must reference an imported identifier or property-access expression, or be a string module path.`,
-    );
-  }
-
-  const [schemaRootIdentifier, ...schemaPropertyPath] = schemaAccessSegments;
-  if (!schemaRootIdentifier) {
-    throw new Error(`Resource "${resource.name}" has an invalid validation.schema reference.`);
-  }
-
-  const schemaImport = resolveImportedIdentifier(sourceFile, schemaRootIdentifier);
-  if (!schemaImport) {
-    throw new Error(
-      `Could not resolve import for validation.schema identifier "${schemaRootIdentifier}" in "${sourceFilePath}".`,
-    );
-  }
-
-  return toResolvedImportedValueSource(path.dirname(sourceFilePath), schemaImport, schemaPropertyPath);
-}
-
-export function resolveResourceHooksSource(resource: ResourceDefinition): ResolvedHooksSource | null {
-  const hooks = resource.hooks;
-  if (!hooks) {
-    return null;
-  }
-
-  const meta = getResourceMeta(resource);
-  const sourceFilePath = meta?.sourceFile;
-  if (!sourceFilePath) {
-    throw new Error(`Resource "${resource.name}" is missing source-file metadata.`);
-  }
-
-  if (typeof hooks === 'string') {
-    return {
-      sourceFile: path.resolve(path.dirname(sourceFilePath), hooks),
-      accessExpression: '__apiKitResourceHooks',
-      importKind: 'default',
-      importName: '__apiKitResourceHooks',
-      importSourceName: 'default',
-    };
-  }
-
-  const sourceText = fs.readFileSync(sourceFilePath, 'utf8');
-  const sourceFile = ts.createSourceFile(sourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const resourceObject = findResourceObjectLiteral(sourceFile, resource.name);
-  if (!resourceObject) {
-    throw new Error(`Could not locate defineResource(...) call for resource "${resource.name}" in "${sourceFilePath}".`);
-  }
-
-  const hooksExpression = getProperty(resourceObject, 'hooks');
-  const hooksAccessSegments = hooksExpression ? getPropertyAccessSegments(hooksExpression) : null;
-  if (!hooksAccessSegments || hooksAccessSegments.length === 0) {
-    throw new Error(
-      `Resource "${resource.name}" hooks must reference an imported identifier or property-access expression, or be a string module path.`,
-    );
-  }
-
-  const [hooksRootIdentifier, ...hooksPropertyPath] = hooksAccessSegments;
-  if (!hooksRootIdentifier) {
-    throw new Error(`Resource "${resource.name}" has an invalid hooks reference.`);
-  }
-
-  const hooksImport = resolveImportedIdentifier(sourceFile, hooksRootIdentifier);
-  if (!hooksImport) {
-    throw new Error(`Could not resolve import for hooks identifier "${hooksRootIdentifier}" in "${sourceFilePath}".`);
-  }
-
-  return toResolvedImportedValueSource(path.dirname(sourceFilePath), hooksImport, hooksPropertyPath);
+  return resolveImportedExpressionSource(sourceFilePath, sourceFile, engineExpression, 'validation.engine');
 }
 
 export function resolveDbProviderToken(config: {

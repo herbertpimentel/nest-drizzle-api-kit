@@ -1,43 +1,65 @@
 import type {
   ApiKitConfig,
   ResourceDefinition,
-  ResourceEndpointName,
+  ResourceDocsDefinition,
+  ResourceFunctionName,
   ResourceQueryDefinition,
-  ResourceOpenApiDefinition,
-  ResourceGuardsDefinition,
-  ResourceDtoDefinition,
 } from '../definition/types';
 import type { GeneratedDtoField } from './dto-fields';
 
-export type NormalizedHookCallDefinition = {
-  accessor: string;
+export type ImportedValueSource = {
+  sourceFile: string;
+  accessExpression: string;
+  importKind: 'default' | 'named' | 'namespace';
+  importName: string;
+  importSourceName: string;
+};
+
+export type NormalizedHookDefinition = {
+  sourceFile: string;
   suggestedName: string;
   description?: string;
 };
 
-export type NormalizedHooksDefinition = {
-  source: {
-    sourceFile: string;
-    accessExpression: string;
-    importKind: 'default' | 'named' | 'namespace';
-    importName: string;
-    importSourceName: string;
-  };
-  before: NormalizedHookCallDefinition[];
-  after: NormalizedHookCallDefinition[];
-  endpoints: Record<ResourceEndpointName, {
-    before: NormalizedHookCallDefinition[];
-    after: NormalizedHookCallDefinition[];
-  }>;
+export type NormalizedHookPhaseDefinition = {
+  before: NormalizedHookDefinition[];
+  after: NormalizedHookDefinition[];
 };
 
-export type NormalizedEndpointDefinition = {
-  name: ResourceEndpointName;
+export type NormalizedApiKitHooksDefinition = NormalizedHookPhaseDefinition & {
+  functions: Record<ResourceFunctionName, NormalizedHookPhaseDefinition>;
+};
+
+export type NormalizedGeneratedDtoDefinition = {
+  mode: 'generated';
+  kind: 'body' | 'query' | 'params' | 'output';
+  className: string;
+  fileName: string;
+  fields?: GeneratedDtoField[];
+};
+
+export type NormalizedCustomDtoDefinition = {
+  mode: 'custom';
+  kind: 'body' | 'query' | 'params' | 'output';
+  source: ImportedValueSource;
+};
+
+export type NormalizedDtoDefinition = NormalizedGeneratedDtoDefinition | NormalizedCustomDtoDefinition;
+
+export type NormalizedResourceFunctionDefinition = {
+  name: ResourceFunctionName;
   enabled: boolean;
   transactional: boolean;
   operationId: string;
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
+  summary: string;
+  description?: string;
+  guards: ImportedValueSource[];
+  input: NormalizedDtoDefinition;
+  output?: NormalizedDtoDefinition;
+  validation?: ImportedValueSource;
+  hooks: NormalizedHookPhaseDefinition;
 };
 
 export type NormalizedResourceDefinition = {
@@ -45,18 +67,13 @@ export type NormalizedResourceDefinition = {
   name: string;
   singularName: string;
   pluralName: string;
-  routeBasePath: string;
-  openApiTag: string;
+  basePath: string;
+  docs: Required<Pick<ResourceDocsDefinition, 'enabled'>> & ResourceDocsDefinition;
   classNames: {
     controller: string;
     service: string;
     module: string;
     query: string;
-    responseDto: string;
-    createDto: string;
-    updateDto: string;
-    findQueryDto: string;
-    idParamsDto: string;
     resourceMetadata: string;
   };
   fileNames: {
@@ -64,31 +81,19 @@ export type NormalizedResourceDefinition = {
     service: string;
     module: string;
     query: string;
-    responseDto: string;
-    createDto: string;
-    updateDto: string;
-    findQueryDto: string;
-    idParamsDto: string;
     metadata: string;
   };
-  endpoints: Record<ResourceEndpointName, NormalizedEndpointDefinition>;
-  dto: ResourceDtoDefinition;
-  guards: ResourceGuardsDefinition;
-  query: Required<Pick<ResourceQueryDefinition, 'pagination'>> & Omit<ResourceQueryDefinition, 'pagination'>;
-  openApi: Required<Pick<ResourceOpenApiDefinition, 'enabled'>> & ResourceOpenApiDefinition;
-  validation?: {
-    schemaSource: {
-      sourceFile: string;
-      accessExpression: string;
-      importKind: 'default' | 'named' | 'namespace';
-      importName: string;
-      importSourceName: string;
+  guards: ImportedValueSource[];
+  query: Omit<ResourceQueryDefinition, 'pagination'> & {
+    pagination: {
+      enabled: boolean;
+      defaultPage: number;
+      defaultPageSize: number;
+      maxPageSize: number;
     };
   };
-  hooks?: NormalizedHooksDefinition;
+  functions: Record<ResourceFunctionName, NormalizedResourceFunctionDefinition>;
   generatedDtos: {
-    createFields: GeneratedDtoField[];
-    responseFields: GeneratedDtoField[];
     idField: GeneratedDtoField | null;
   };
   source: {
@@ -107,24 +112,11 @@ export type NormalizedApiKitConfig = Omit<ApiKitConfig, 'resources' | 'validatio
   rootModuleClassName: string;
   rootModuleFileName: string;
   dbProviderToken?: string;
-  dbSchemaSource?: {
-    sourceFile: string;
-    accessExpression: string;
-    importKind: 'default' | 'named' | 'namespace';
-    importName: string;
-    importSourceName: string;
-  };
+  dbSchemaSource?: ImportedValueSource;
   validation?: {
-    engineName: 'zod' | 'custom';
-    engineSource?: {
-      sourceFile: string;
-      accessExpression: string;
-      importKind: 'default' | 'named' | 'namespace';
-      importName: string;
-      importSourceName: string;
-    };
+    engineSource?: ImportedValueSource;
   };
-  hooks?: NormalizedHooksDefinition;
+  hooks?: NormalizedApiKitHooksDefinition;
   postGenerateCommand?: string;
   resources: NormalizedResourceDefinition[];
 };

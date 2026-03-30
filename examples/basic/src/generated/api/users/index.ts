@@ -3,8 +3,12 @@ export * from './users.module';
 export * from './users.controller';
 export * from './users.service';
 export * from './users.query';
-export * from './dto/create-user.dto';
-export * from './dto/update-user.dto';
-export * from './dto/find-users-query.dto';
+export * from './dto/find-users-input.dto';
+export * from './dto/create-user-input.dto';
+export * from './dto/update-user-input.dto';
 export * from './dto/user-id.params.dto';
-export * from './dto/user-response.dto';
+export * from './dto/find-users-output.dto';
+export * from './dto/find-one-user-output.dto';
+export * from './dto/create-user-output.dto';
+export * from './dto/update-user-output.dto';
+

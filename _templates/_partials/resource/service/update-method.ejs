@@ -1,16 +1,14 @@
-  async update(id: <%= idType %>, body: <%= context.resource.classNames.updateDto %>): Promise<<%= responseDto %>> {
-<% if (hasHooks) { %><% if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+  async update(id: <%= idType %>, body: <%= inputType %>): Promise<<%= outputType %>> {
+<% if (hasHooks) { %><% if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id }, body });
 <% } else { %>    const input = { params: { id }, body };
-<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
-<% } %>
-<% if (transactional) { %>    return this.db.transaction(async (tx) => {
+<% } %><% if (transactional) { %>    return this.db.transaction(async (tx) => {
       const context = {
         db: tx,
-        resourceName: '<%= context.resource.name %>',
-        endpoint: 'update' as const,
+        resourceName: '<%= resourceName %>',
+        functionName: 'update' as const,
         state: new Map<string, unknown>(),
         input,
-        result: undefined as <%= responseDto %> | undefined,
+        result: undefined as <%= outputType %> | undefined,
       };
 
 <% for (const line of beforeHookLinesTransactional) { %><%= line %>
@@ -19,18 +17,17 @@
         .set(context.input.body)
         .where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id))
         .returning();
-      context.result = rows[0] as <%= responseDto %>;
+      context.result = rows[0] as <%= outputType %>;
 <% for (const line of afterHookLinesTransactional) { %><%= line %>
-<% } %>
-      return context.result as <%= responseDto %>;
+<% } %>      return context.result as <%= outputType %>;
     });
 <% } else { %>    const context = {
       db: this.db,
-      resourceName: '<%= context.resource.name %>',
-      endpoint: 'update' as const,
+      resourceName: '<%= resourceName %>',
+      functionName: 'update' as const,
       state: new Map<string, unknown>(),
       input,
-      result: undefined as <%= responseDto %> | undefined,
+      result: undefined as <%= outputType %> | undefined,
     };
 
 <% for (const line of beforeHookLines) { %><%= line %>
@@ -39,18 +36,17 @@
       .set(context.input.body)
       .where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id))
       .returning();
-    context.result = rows[0] as <%= responseDto %>;
+    context.result = rows[0] as <%= outputType %>;
 <% for (const line of afterHookLines) { %><%= line %>
-<% } %>
-    return context.result as <%= responseDto %>;
-<% } %><% } else if (transactional) { %><% if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+<% } %>    return context.result as <%= outputType %>;
+<% } %><% } else if (transactional) { %><% if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id }, body });
     return this.db.transaction(async (tx) => {
       const rows = await tx
         .update(<%= table %>)
         .set(input.body)
         .where(eq(<%= table %>.<%= idFieldName %>, input.params.id))
         .returning();
-      return rows[0] as <%= responseDto %>;
+      return rows[0] as <%= outputType %>;
     });
 <% } else { %>    return this.db.transaction(async (tx) => {
       const rows = await tx
@@ -58,19 +54,19 @@
         .set(body)
         .where(eq(<%= table %>.<%= idFieldName %>, id))
         .returning();
-      return rows[0] as <%= responseDto %>;
+      return rows[0] as <%= outputType %>;
     });
-<% } %><% } else if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+<% } %><% } else if (validationExpression) { %>    const input = validateResourceInput(<%= validationExpression %>, { params: { id }, body });
     const rows = await this.db
       .update(<%= table %>)
       .set(input.body)
       .where(eq(<%= table %>.<%= idFieldName %>, input.params.id))
       .returning();
-    return rows[0] as <%= responseDto %>;
+    return rows[0] as <%= outputType %>;
 <% } else { %>    const rows = await this.db
       .update(<%= table %>)
       .set(body)
       .where(eq(<%= table %>.<%= idFieldName %>, id))
       .returning();
-    return rows[0] as <%= responseDto %>;
+    return rows[0] as <%= outputType %>;
 <% } %>  }

@@ -1,52 +1,48 @@
-  async create(body: <%= context.resource.classNames.createDto %>): Promise<<%= responseDto %>> {
-<% if (hasHooks) { %><% if (validationEnabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
+  async create(body: <%= inputType %>): Promise<<%= outputType %>> {
+<% if (hasHooks) { %><% if (validationExpression) { %>    const validatedBody = validateResourceInput(<%= validationExpression %>, body);
 <% } else { %>    const input = body;
-<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
-<% } %>
-<% if (transactional) { %>    return this.db.transaction(async (tx) => {
+<% } %><% if (transactional) { %>    return this.db.transaction(async (tx) => {
       const context = {
         db: tx,
-        resourceName: '<%= context.resource.name %>',
-        endpoint: 'create' as const,
+        resourceName: '<%= resourceName %>',
+        functionName: 'create' as const,
         state: new Map<string, unknown>(),
-        input: <%= validationEnabled ? 'validatedBody' : 'input' %>,
-        result: undefined as <%= responseDto %> | undefined,
+        input: <%= validationExpression ? 'validatedBody' : 'input' %>,
+        result: undefined as <%= outputType %> | undefined,
       };
 
 <% for (const line of beforeHookLinesTransactional) { %><%= line %>
 <% } %>      const rows = await tx.insert(<%= table %>).values(context.input).returning();
-      context.result = rows[0] as <%= responseDto %>;
+      context.result = rows[0] as <%= outputType %>;
 <% for (const line of afterHookLinesTransactional) { %><%= line %>
-<% } %>
-      return context.result as <%= responseDto %>;
+<% } %>      return context.result as <%= outputType %>;
     });
 <% } else { %>    const context = {
       db: this.db,
-      resourceName: '<%= context.resource.name %>',
-      endpoint: 'create' as const,
+      resourceName: '<%= resourceName %>',
+      functionName: 'create' as const,
       state: new Map<string, unknown>(),
-      input: <%= validationEnabled ? 'validatedBody' : 'input' %>,
-      result: undefined as <%= responseDto %> | undefined,
+      input: <%= validationExpression ? 'validatedBody' : 'input' %>,
+      result: undefined as <%= outputType %> | undefined,
     };
 
 <% for (const line of beforeHookLines) { %><%= line %>
 <% } %>    const rows = await this.db.insert(<%= table %>).values(context.input).returning();
-    context.result = rows[0] as <%= responseDto %>;
+    context.result = rows[0] as <%= outputType %>;
 <% for (const line of afterHookLines) { %><%= line %>
-<% } %>
-    return context.result as <%= responseDto %>;
-<% } %><% } else if (transactional) { %><% if (validationEnabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
+<% } %>    return context.result as <%= outputType %>;
+<% } %><% } else if (transactional) { %><% if (validationExpression) { %>    const validatedBody = validateResourceInput(<%= validationExpression %>, body);
     return this.db.transaction(async (tx) => {
       const rows = await tx.insert(<%= table %>).values(validatedBody).returning();
-      return rows[0] as <%= responseDto %>;
+      return rows[0] as <%= outputType %>;
     });
 <% } else { %>    return this.db.transaction(async (tx) => {
       const rows = await tx.insert(<%= table %>).values(body).returning();
-      return rows[0] as <%= responseDto %>;
+      return rows[0] as <%= outputType %>;
     });
-<% } %><% } else if (validationEnabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
+<% } %><% } else if (validationExpression) { %>    const validatedBody = validateResourceInput(<%= validationExpression %>, body);
     const rows = await this.db.insert(<%= table %>).values(validatedBody).returning();
-    return rows[0] as <%= responseDto %>;
+    return rows[0] as <%= outputType %>;
 <% } else { %>    const rows = await this.db.insert(<%= table %>).values(body).returning();
-    return rows[0] as <%= responseDto %>;
+    return rows[0] as <%= outputType %>;
 <% } %>  }

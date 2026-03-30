@@ -1,5 +1,6 @@
 @Patch(':id')
-@ApiOperation({ operationId: '<%- r.endpoints.update.operationId %>', summary: '<%- summary %>' })
-<%- signature %>
+<% if (guardsDecorator) { %><%- guardsDecorator %>
+<% } %><% if (docsDecorator) { %><%- docsDecorator %>
+<% } %><%- signature %>
 <%- call %>
 }

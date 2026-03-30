@@ -1,44 +1,49 @@
-import { createJiti } from 'jiti';
+import path from 'node:path';
 import type {
   ApiKitConfig,
+  BodyInputDefinition,
+  OutputDefinition,
   ResourceDefinition,
-  ResourceEndpointName,
-  ResourceHookEntry,
-  ResourceHooksDefinition,
-  ResourceHooksSourceDefinition,
+  ResourceFunctionCommonDefinition,
+  ResourceFunctionHooksDefinition,
+  ResourceFunctionName,
+  ResourceHookReference,
 } from '../definition/types';
 import type {
+  ImportedValueSource,
   NormalizedApiKitConfig,
-  NormalizedEndpointDefinition,
-  NormalizedHookCallDefinition,
-  NormalizedHooksDefinition,
+  NormalizedApiKitHooksDefinition,
+  NormalizedDtoDefinition,
+  NormalizedHookDefinition,
+  NormalizedHookPhaseDefinition,
   NormalizedResourceDefinition,
+  NormalizedResourceFunctionDefinition,
 } from './models';
-import { buildCreateDtoFields, buildIdParamField, buildResponseDtoFields } from './dto-fields';
+import {
+  buildGeneratedBodyInputFields,
+  buildGeneratedOutputFields,
+  buildGeneratedParamsInputFields,
+  buildPrimaryIdField,
+} from './dto-fields';
 import { kebabCase, pascalCase, pluralize, singularize } from './naming';
 import {
-  resolveConfigHooksSource,
+  resolveConfigFilePath,
   resolveDbSchemaType,
-  resolveResourceHooksSource,
+  resolveResourceFilePath,
+  resolveResourceImportedValueSource,
+  resolveResourceImportedValueSources,
   resolveResourceSource,
-  resolveResourceValidationSchemaSource,
   resolveValidationEngineSource,
-  type ResolvedHooksSource,
 } from './resource-source';
 import { validateApiKitConfig } from './validate-config';
 
-const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
-const jiti = createJiti(__filename, {
-  fsCache: false,
-  interopDefault: false,
-  moduleCache: false,
-});
+const functionNames: ResourceFunctionName[] = ['find', 'findOne', 'create', 'update', 'delete'];
 
-function operationIdFor(endpoint: ResourceEndpointName, singular: string, plural: string): string {
+function operationIdFor(functionName: ResourceFunctionName, singular: string, plural: string): string {
   const singularPascal = pascalCase(singular);
   const pluralPascal = pascalCase(plural);
 
-  switch (endpoint) {
+  switch (functionName) {
     case 'find':
       return `find${pluralPascal}`;
     case 'findOne':
@@ -52,8 +57,8 @@ function operationIdFor(endpoint: ResourceEndpointName, singular: string, plural
   }
 }
 
-function methodFor(endpoint: ResourceEndpointName): NormalizedEndpointDefinition['method'] {
-  switch (endpoint) {
+function methodFor(functionName: ResourceFunctionName): NormalizedResourceFunctionDefinition['method'] {
+  switch (functionName) {
     case 'find':
     case 'findOne':
       return 'GET';
@@ -66,8 +71,8 @@ function methodFor(endpoint: ResourceEndpointName): NormalizedEndpointDefinition
   }
 }
 
-function pathFor(endpoint: ResourceEndpointName): string {
-  switch (endpoint) {
+function pathFor(functionName: ResourceFunctionName): string {
+  switch (functionName) {
     case 'find':
     case 'create':
       return '';
@@ -78,151 +83,428 @@ function pathFor(endpoint: ResourceEndpointName): string {
   }
 }
 
-function isMutableEndpoint(endpoint: ResourceEndpointName): endpoint is 'create' | 'update' | 'delete' {
-  return endpoint === 'create' || endpoint === 'update' || endpoint === 'delete';
+function defaultSummaryFor(functionName: ResourceFunctionName, singular: string, plural: string): string {
+  switch (functionName) {
+    case 'find':
+      return `Find ${plural}`;
+    case 'findOne':
+      return `Find ${singular}`;
+    case 'create':
+      return `Create ${singular}`;
+    case 'update':
+      return `Update ${singular}`;
+    case 'delete':
+      return `Delete ${singular}`;
+  }
 }
 
-function isHookMetadataEntry(entry: ResourceHookEntry): entry is Extract<ResourceHookEntry, { use: (...args: never[]) => unknown }> {
-  return typeof entry === 'object' && entry !== null && 'use' in entry;
+function isMutableFunction(functionName: ResourceFunctionName): functionName is 'create' | 'update' | 'delete' {
+  return functionName === 'create' || functionName === 'update' || functionName === 'delete';
 }
 
 function toCamelCase(input: string): string {
   const pascal = pascalCase(input);
-  return pascal ? `${pascal.charAt(0).toLowerCase()}${pascal.slice(1)}` : 'hook';
+  return pascal.length > 0 ? `${pascal.charAt(0).toLowerCase()}${pascal.slice(1)}` : 'value';
 }
 
-function buildHookFallbackName(pathSegments: string[], index: number): string {
-  const readableSegments = pathSegments.map((segment) => segment.replace(/[^\w]+/g, ' ')).filter(Boolean).join(' ');
-  return toCamelCase(`${readableSegments} hook ${index + 1}`);
+function stripExtension(value: string): string {
+  return value.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/i, '');
 }
 
-function suggestHookName(entry: ResourceHookEntry, pathSegments: string[], index: number): string {
-  if (isHookMetadataEntry(entry) && typeof entry.name === 'string' && entry.name.trim().length > 0) {
+function aliasForStringImport(modulePath: string, fallbackName: string): string {
+  const baseName = path.basename(stripExtension(modulePath));
+  const candidate = baseName.replace(/[^A-Za-z0-9]+/g, ' ').trim();
+  return candidate.length > 0 ? toCamelCase(candidate) : fallbackName;
+}
+
+function defaultImportedValueSource(ownerFile: string, modulePath: string, fallbackName: string): ImportedValueSource {
+  const importName = aliasForStringImport(modulePath, fallbackName);
+  return {
+    sourceFile: path.resolve(path.dirname(ownerFile), modulePath),
+    accessExpression: importName,
+    importKind: 'default',
+    importName,
+    importSourceName: 'default',
+  };
+}
+
+function hookNameFromReference(entry: ResourceHookReference, fallbackPath: string): string {
+  if (typeof entry === 'object' && entry.name?.trim()) {
     return toCamelCase(entry.name);
   }
 
-  const hook = typeof entry === 'function' ? entry : entry.use;
-  if (typeof hook.name === 'string' && hook.name.trim().length > 0) {
-    return toCamelCase(hook.name);
-  }
-
-  return buildHookFallbackName(pathSegments, index);
+  return aliasForStringImport(fallbackPath, 'resourceHook');
 }
 
-function toHookAccessor(pathSegments: string[]): string {
-  return pathSegments
-    .map((segment, index) => (/^\d+$/.test(segment) ? `?.[${segment}]` : index === 0 ? `.${segment}` : `?.${segment}`))
-    .join('');
-}
-
-function loadHooksDefinition(source: ResourceHooksSourceDefinition, sourceInfo: ResolvedHooksSource, ownerLabel: string): ResourceHooksDefinition {
-  if (typeof source !== 'string') {
-    return source;
-  }
-
-  const mod = jiti(sourceInfo.sourceFile) as Record<string, unknown>;
-  const hooks = (mod.default ?? mod) as unknown;
-  if (!hooks || typeof hooks !== 'object') {
-    throw new Error(`${ownerLabel} hooks module "${sourceInfo.sourceFile}" must export a hooks definition object as its default export.`);
-  }
-
-  return hooks as ResourceHooksDefinition;
-}
-
-function normalizeHookEntries(entries: ResourceHookEntry[] | undefined, pathSegments: string[]): NormalizedHookCallDefinition[] {
-  if (!entries?.length) {
-    return [];
-  }
-
-  return entries.map((entry, index) => ({
-    accessor: toHookAccessor([...pathSegments, String(index)]),
-    suggestedName: suggestHookName(entry, pathSegments, index),
-    ...(isHookMetadataEntry(entry) && entry.description ? { description: entry.description } : {}),
-  }));
-}
-
-function normalizeHooks(hooks: ResourceHooksDefinition, source: ResolvedHooksSource): NormalizedHooksDefinition {
+function normalizeHookReference(entry: ResourceHookReference, ownerFile: string): NormalizedHookDefinition {
+  const pathValue = typeof entry === 'string' ? entry : entry.path;
   return {
-    source,
-    before: normalizeHookEntries(hooks.before, ['before']),
-    after: normalizeHookEntries(hooks.after, ['after']),
-    endpoints: Object.fromEntries(
-      endpointNames.map((endpointName) => [
-        endpointName,
-        {
-          before: normalizeHookEntries(hooks[endpointName]?.before, [endpointName, 'before']),
-          after: normalizeHookEntries(hooks[endpointName]?.after, [endpointName, 'after']),
-        },
+    sourceFile: path.resolve(path.dirname(ownerFile), pathValue),
+    suggestedName: hookNameFromReference(entry, pathValue),
+    ...(typeof entry === 'object' && entry.description ? { description: entry.description } : {}),
+  };
+}
+
+function normalizeHookPhase(
+  hooks: ResourceFunctionHooksDefinition | undefined,
+  ownerFile: string,
+): NormalizedHookPhaseDefinition {
+  return {
+    before: (hooks?.before ?? []).map((entry) => normalizeHookReference(entry, ownerFile)),
+    after: (hooks?.after ?? []).map((entry) => normalizeHookReference(entry, ownerFile)),
+  };
+}
+
+function normalizeConfigHooks(config: ApiKitConfig): NormalizedApiKitHooksDefinition | undefined {
+  if (!config.hooks) {
+    return undefined;
+  }
+
+  const configFile = resolveConfigFilePath(config);
+  return {
+    ...normalizeHookPhase(config.hooks, configFile),
+    functions: Object.fromEntries(
+      functionNames.map((functionName) => [
+        functionName,
+        normalizeHookPhase(config.hooks?.[functionName], configFile),
       ]),
-    ) as NormalizedHooksDefinition['endpoints'],
+    ) as Record<ResourceFunctionName, NormalizedHookPhaseDefinition>,
+  };
+}
+
+function normalizeGeneratedQueryInputDto(
+  singularClass: string,
+  pluralClass: string,
+  singularFile: string,
+  pluralFile: string,
+): Extract<NormalizedDtoDefinition, { mode: 'generated' }> {
+  return {
+    mode: 'generated',
+    kind: 'query',
+    className: `Find${pluralClass}InputDto`,
+    fileName: `find-${pluralFile}-input.dto.ts`,
+  };
+}
+
+function normalizeGeneratedParamsInputDto(
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+): Extract<NormalizedDtoDefinition, { mode: 'generated' }> {
+  return {
+    mode: 'generated',
+    kind: 'params',
+    className: `${singularClass}IdParamsDto`,
+    fileName: `${singularFile}-id.params.dto.ts`,
+    fields: buildGeneratedParamsInputFields(resource),
+  };
+}
+
+function normalizeGeneratedBodyInputDto(
+  functionName: 'create' | 'update',
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+  config: Extract<BodyInputDefinition, { mode?: 'generate' }> | undefined,
+): Extract<NormalizedDtoDefinition, { mode: 'generated' }> {
+  const prefix = functionName === 'create' ? 'Create' : 'Update';
+  return {
+    mode: 'generated',
+    kind: 'body',
+    className: `${prefix}${singularClass}InputDto`,
+    fileName: `${functionName}-${singularFile}-input.dto.ts`,
+    fields: buildGeneratedBodyInputFields(resource, config),
+  };
+}
+
+function normalizeGeneratedOutputDto(
+  functionName: 'find' | 'findOne' | 'create' | 'update',
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+  pluralClass: string,
+  pluralFile: string,
+  config: Extract<OutputDefinition, { mode?: 'generate' }> | undefined,
+): Extract<NormalizedDtoDefinition, { mode: 'generated' }> {
+  const prefix = functionName === 'find'
+    ? `Find${pluralClass}`
+    : functionName === 'findOne'
+      ? `FindOne${singularClass}`
+      : functionName === 'create'
+        ? `Create${singularClass}`
+        : `Update${singularClass}`;
+  const filePrefix = functionName === 'find'
+    ? `find-${pluralFile}`
+    : functionName === 'findOne'
+      ? `find-one-${singularFile}`
+      : functionName === 'create'
+        ? `create-${singularFile}`
+        : `update-${singularFile}`;
+
+  return {
+    mode: 'generated',
+    kind: 'output',
+    className: `${prefix}OutputDto`,
+    fileName: `${filePrefix}-output.dto.ts`,
+    fields: buildGeneratedOutputFields(resource, config),
+  };
+}
+
+function normalizeCustomDtoDefinition(
+  resource: ResourceDefinition,
+  propertyPath: string[],
+  errorLabel: string,
+  kind: 'body' | 'query' | 'params' | 'output',
+): Extract<NormalizedDtoDefinition, { mode: 'custom' }> {
+  const source = resolveResourceImportedValueSource(resource, propertyPath, errorLabel);
+  if (!source) {
+    throw new Error(`${errorLabel} must reference an imported class.`);
+  }
+
+  return {
+    mode: 'custom',
+    kind,
+    source,
+  };
+}
+
+function normalizeFindInput(
+  resource: ResourceDefinition,
+  singularClass: string,
+  pluralClass: string,
+  singularFile: string,
+  pluralFile: string,
+): NormalizedDtoDefinition {
+  const input = resource.functions?.find?.input;
+  if (input?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', 'find', 'input', 'class'],
+      `Resource "${resource.name}" function "find" input.class`,
+      'query',
+    );
+  }
+
+  return normalizeGeneratedQueryInputDto(singularClass, pluralClass, singularFile, pluralFile);
+}
+
+function normalizeFindOneInput(
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+): NormalizedDtoDefinition {
+  const input = resource.functions?.findOne?.input;
+  if (input?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', 'findOne', 'input', 'class'],
+      `Resource "${resource.name}" function "findOne" input.class`,
+      'params',
+    );
+  }
+
+  return normalizeGeneratedParamsInputDto(resource, singularClass, singularFile);
+}
+
+function normalizeCreateInput(
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+): NormalizedDtoDefinition {
+  const input = resource.functions?.create?.input;
+  if (input?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', 'create', 'input', 'class'],
+      `Resource "${resource.name}" function "create" input.class`,
+      'body',
+    );
+  }
+
+  return normalizeGeneratedBodyInputDto('create', resource, singularClass, singularFile, input);
+}
+
+function normalizeUpdateInput(
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+): NormalizedDtoDefinition {
+  const input = resource.functions?.update?.input;
+  if (input?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', 'update', 'input', 'class'],
+      `Resource "${resource.name}" function "update" input.class`,
+      'body',
+    );
+  }
+
+  return normalizeGeneratedBodyInputDto('update', resource, singularClass, singularFile, input);
+}
+
+function normalizeDeleteInput(
+  resource: ResourceDefinition,
+  singularClass: string,
+  singularFile: string,
+): NormalizedDtoDefinition {
+  const input = resource.functions?.delete?.input;
+  if (input?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', 'delete', 'input', 'class'],
+      `Resource "${resource.name}" function "delete" input.class`,
+      'params',
+    );
+  }
+
+  return normalizeGeneratedParamsInputDto(resource, singularClass, singularFile);
+}
+
+function normalizeFunctionOutput(
+  resource: ResourceDefinition,
+  functionName: 'find' | 'findOne' | 'create' | 'update',
+  singularClass: string,
+  singularFile: string,
+  pluralClass: string,
+  pluralFile: string,
+): NormalizedDtoDefinition {
+  const output = resource.functions?.[functionName]?.output;
+  if (output?.mode === 'custom') {
+    return normalizeCustomDtoDefinition(
+      resource,
+      ['functions', functionName, 'output', 'class'],
+      `Resource "${resource.name}" function "${functionName}" output.class`,
+      'output',
+    );
+  }
+
+  return normalizeGeneratedOutputDto(
+    functionName,
+    resource,
+    singularClass,
+    singularFile,
+    pluralClass,
+    pluralFile,
+    output,
+  );
+}
+
+function normalizeValidation(
+  resource: ResourceDefinition,
+  functionName: ResourceFunctionName,
+): ImportedValueSource | undefined {
+  const validation = resource.functions?.[functionName]?.validation;
+  if (!validation) {
+    return undefined;
+  }
+
+  if (typeof validation === 'string') {
+    return defaultImportedValueSource(
+      resolveResourceFilePath(resource),
+      validation,
+      `${functionName}ValidationSchema`,
+    );
+  }
+
+  return resolveResourceImportedValueSource(
+    resource,
+    ['functions', functionName, 'validation'],
+    `Resource "${resource.name}" function "${functionName}" validation`,
+  ) ?? undefined;
+}
+
+function normalizeFunctionDefinition(
+  resource: ResourceDefinition,
+  functionName: ResourceFunctionName,
+  singularName: string,
+  pluralName: string,
+  singularClass: string,
+  pluralClass: string,
+  singularFile: string,
+  pluralFile: string,
+  resourceFile: string,
+): NormalizedResourceFunctionDefinition {
+  const raw = resource.functions?.[functionName] as (ResourceFunctionCommonDefinition & { transactional?: boolean }) | undefined;
+  const enabled = raw?.enabled ?? true;
+  const validation = normalizeValidation(resource, functionName);
+
+  const input = functionName === 'find'
+    ? normalizeFindInput(resource, singularClass, pluralClass, singularFile, pluralFile)
+    : functionName === 'findOne'
+      ? normalizeFindOneInput(resource, singularClass, singularFile)
+      : functionName === 'create'
+        ? normalizeCreateInput(resource, singularClass, singularFile)
+        : functionName === 'update'
+          ? normalizeUpdateInput(resource, singularClass, singularFile)
+          : normalizeDeleteInput(resource, singularClass, singularFile);
+
+  const output = functionName === 'delete'
+    ? undefined
+    : normalizeFunctionOutput(resource, functionName, singularClass, singularFile, pluralClass, pluralFile);
+
+  return {
+    name: functionName,
+    enabled,
+    transactional: isMutableFunction(functionName) ? raw?.transactional ?? false : false,
+    operationId: operationIdFor(functionName, singularName, pluralName),
+    method: methodFor(functionName),
+    path: pathFor(functionName),
+    summary: raw?.summary ?? defaultSummaryFor(functionName, singularName, pluralName),
+    ...(raw?.description ? { description: raw.description } : {}),
+    guards: resolveResourceImportedValueSources(
+      resource,
+      ['functions', functionName, 'guards'],
+      `Resource "${resource.name}" function "${functionName}" guards`,
+    ),
+    input,
+    ...(output ? { output } : {}),
+    ...(validation ? { validation } : {}),
+    hooks: normalizeHookPhase(raw?.hooks, resourceFile),
   };
 }
 
 function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefinition {
   const source = resolveResourceSource(resource);
-  const hooksSource = resolveResourceHooksSource(resource);
-  const hooks = resource.hooks && hooksSource
-    ? normalizeHooks(loadHooksDefinition(resource.hooks, hooksSource, `Resource "${resource.name}"`), hooksSource)
-    : undefined;
-  const pagination = resource.query?.pagination;
-  const paginationOptions = typeof pagination === 'object' && pagination !== null ? pagination : undefined;
+  const resourceFile = resolveResourceFilePath(resource);
   const singularName = singularize(resource.name);
   const pluralName = pluralize(singularName);
-  const routeBasePath = resource.route?.basePath ?? kebabCase(pluralName);
   const singularClass = pascalCase(singularName);
   const pluralClass = pascalCase(pluralName);
-
-  const endpoints = Object.fromEntries(
-    endpointNames.map((endpointName) => {
-      const rawValue = resource.endpoints ? (resource.endpoints as Partial<Record<ResourceEndpointName, unknown>>)[endpointName] : undefined;
-      const raw = typeof rawValue === 'object' && rawValue !== null ? rawValue as { enabled?: boolean; transactional?: boolean } : undefined;
-      const enabled = rawValue === false ? false : raw?.enabled ?? true;
-      const normalized: NormalizedEndpointDefinition = {
-        name: endpointName,
-        enabled,
-        transactional: raw && isMutableEndpoint(endpointName) ? raw.transactional ?? false : false,
-        operationId: operationIdFor(endpointName, singularName, pluralName),
-        method: methodFor(endpointName),
-        path: pathFor(endpointName),
-      };
-      return [endpointName, normalized];
-    }),
-  ) as Record<ResourceEndpointName, NormalizedEndpointDefinition>;
+  const singularFile = kebabCase(singularName);
+  const pluralFile = kebabCase(pluralName);
+  const pagination = resource.query?.pagination;
+  const paginationOptions = typeof pagination === 'object' && pagination !== null ? pagination : undefined;
 
   return {
     original: resource,
     name: resource.name,
     singularName,
     pluralName,
-    routeBasePath,
-    openApiTag: resource.openApi?.tag ?? pluralClass,
+    basePath: resource.basePath ?? kebabCase(pluralName),
+    docs: {
+      enabled: resource.docs?.enabled ?? true,
+      tags: resource.docs?.tags ?? [pluralClass],
+      ...(resource.docs?.description ? { description: resource.docs.description } : {}),
+    },
     classNames: {
       controller: `${pluralClass}Controller`,
       service: `${pluralClass}Service`,
       module: `${pluralClass}Module`,
       query: `${pluralClass}Query`,
-      responseDto: `${singularClass}ResponseDto`,
-      createDto: `Create${singularClass}Dto`,
-      updateDto: `Update${singularClass}Dto`,
-      findQueryDto: `Find${pluralClass}QueryDto`,
-      idParamsDto: `${singularClass}IdParamsDto`,
       resourceMetadata: `${pluralClass}ResourceMetadata`,
     },
     fileNames: {
-      controller: `${kebabCase(pluralName)}.controller.ts`,
-      service: `${kebabCase(pluralName)}.service.ts`,
-      module: `${kebabCase(pluralName)}.module.ts`,
-      query: `${kebabCase(pluralName)}.query.ts`,
-      responseDto: `${kebabCase(singularName)}-response.dto.ts`,
-      createDto: `create-${kebabCase(singularName)}.dto.ts`,
-      updateDto: `update-${kebabCase(singularName)}.dto.ts`,
-      findQueryDto: `find-${kebabCase(pluralName)}-query.dto.ts`,
-      idParamsDto: `${kebabCase(singularName)}-id.params.dto.ts`,
-      metadata: `${kebabCase(pluralName)}.resource.metadata.ts`,
+      controller: `${pluralFile}.controller.ts`,
+      service: `${pluralFile}.service.ts`,
+      module: `${pluralFile}.module.ts`,
+      query: `${pluralFile}.query.ts`,
+      metadata: `${pluralFile}.resource.metadata.ts`,
     },
-    endpoints,
-    dto: resource.dto ?? {},
-    guards: resource.guards ?? {},
+    guards: resolveResourceImportedValueSources(
+      resource,
+      ['guards'],
+      `Resource "${resource.name}" guards`,
+    ),
     query: {
       ...(resource.query ?? {}),
       pagination: {
@@ -232,26 +514,24 @@ function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefi
         maxPageSize: paginationOptions?.maxPageSize ?? 100,
       },
     },
-    openApi: {
-      enabled: resource.openApi?.enabled ?? true,
-      ...resource.openApi,
-    },
-    ...(resource.validation?.schema
-      ? {
-          validation: {
-            schemaSource: resolveResourceValidationSchemaSource(resource)!,
-          },
-        }
-      : {}),
-    ...(hooks
-      ? {
-          hooks,
-        }
-      : {}),
+    functions: Object.fromEntries(
+      functionNames.map((functionName) => [
+        functionName,
+        normalizeFunctionDefinition(
+          resource,
+          functionName,
+          singularName,
+          pluralName,
+          singularClass,
+          pluralClass,
+          singularFile,
+          pluralFile,
+          resourceFile,
+        ),
+      ]),
+    ) as Record<ResourceFunctionName, NormalizedResourceFunctionDefinition>,
     generatedDtos: {
-      createFields: buildCreateDtoFields(resource),
-      responseFields: buildResponseDtoFields(resource),
-      idField: buildIdParamField(resource),
+      idField: buildPrimaryIdField(resource),
     },
     source: {
       sourceFile: source.sourceFile,
@@ -270,37 +550,28 @@ export function normalizeApiKitConfig(config: ApiKitConfig): NormalizedApiKitCon
 
   const resources = config.resources.filter((item): item is ResourceDefinition => typeof item !== 'string');
   const dbSchemaSource = resolveDbSchemaType(config);
-  const hasValidationSchemas = resources.some((resource) => Boolean(resource.validation?.schema));
+  const hasValidation = resources.some((resource) => functionNames.some((functionName) => Boolean(resource.functions?.[functionName]?.validation)));
   const validationEngineSource = resolveValidationEngineSource(config);
-  const hooksSource = resolveConfigHooksSource(config);
-  const hooks = config.hooks && hooksSource
-    ? normalizeHooks(loadHooksDefinition(config.hooks, hooksSource, 'Config'), hooksSource)
-    : undefined;
+  const normalizedHooks = normalizeConfigHooks(config);
+
   return {
     outputPath: config.outputPath,
     ...(config.dbProviderToken ? { dbProviderToken: config.dbProviderToken } : {}),
     ...(dbSchemaSource ? { dbSchemaSource } : {}),
-    ...((validationEngineSource || hasValidationSchemas)
+    ...((validationEngineSource || hasValidation)
       ? {
-          validation: validationEngineSource?.kind === 'custom'
+          validation: validationEngineSource
             ? {
-                engineName: 'custom',
                 engineSource: validationEngineSource,
               }
-            : {
-                engineName: 'zod',
-              },
+            : {},
         }
       : {}),
-    ...(hooks
-      ? {
-          hooks,
-        }
-      : {}),
+    ...(normalizedHooks ? { hooks: normalizedHooks } : {}),
     ...(config.postGenerateCommand ? { postGenerateCommand: config.postGenerateCommand } : {}),
     cleanOutput: config.cleanOutput ?? true,
     rootModuleClassName: config.rootModuleClassName ?? 'GeneratedApiModule',
     rootModuleFileName: config.rootModuleFileName ?? 'generated-api.module.ts',
-    resources: resources.map(normalizeResource),
+    resources: resources.map((resource) => normalizeResource(resource)),
   };
 }

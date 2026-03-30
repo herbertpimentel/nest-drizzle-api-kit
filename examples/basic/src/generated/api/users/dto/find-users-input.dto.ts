@@ -5,8 +5,7 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Min } from 'class-validator';
 
 
-export class FindUsersQueryDto {
-
+export class FindUsersInputDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -21,17 +20,16 @@ export class FindUsersQueryDto {
   @ApiPropertyOptional({ default: 20 })
   pageSize?: number = 20;
 
-
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Query string format: `?sort=field,ASC` or `?sort=field,DESC`. Allowed fields: name.',
+    description: "Query string format: `?sort=field,ASC` or `?sort=field,DESC`. Allowed fields: name.",
     example: "sort=name,ASC",
   })
   sort?: string | string[];
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Query string format: `?include=relation`. Allowed relations: profile.',
+    description: "Query string format: `?include=relation`. Allowed relations: profile.",
     example: "include=profile",
   })
   include?: string | string[];
@@ -42,8 +40,8 @@ export class FindUsersQueryDto {
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Query string format: `?search=JSON_STRING`. JSON payload supports nested `$and`/`$or` and uses only the allowed fields/operators: name: $eq, $ilike; email: $eq',
-    example: "search={\"$or\":[{\"name\":{\"$ilike\":\"%name%\"}},{\"email\":{\"$eq\":\"john@example.com\"}}]}",
+    description: "Query string format: `?search=JSON_STRING`. JSON payload supports nested `$and`/`$or` and uses only the allowed fields/operators: name: $eq, $ilike; email: $eq",
+    example: "search={\"$or\":[{\"name\":{\"$ilike\":\"%name%\"}}]}",
   })
   search?: string;
 }

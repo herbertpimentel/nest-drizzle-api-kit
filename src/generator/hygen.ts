@@ -30,7 +30,6 @@ export type RunHygenOptions = {
 export async function runHygen(options: RunHygenOptions): Promise<void> {
   const contextFile = await createContextFile(options.context);
   const templatesDir = path.join(packageRoot(), '_templates');
-  const contextJson = JSON.stringify(options.context);
   const targetArgs =
     typeof options.context === 'object' &&
     options.context !== null &&
@@ -44,7 +43,7 @@ export async function runHygen(options: RunHygenOptions): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [resolveHygenBin(), options.generator, options.action, '--contextFile', contextFile, '--contextJson', contextJson, ...targetArgs],
+      [resolveHygenBin(), options.generator, options.action, '--contextFile', contextFile, ...targetArgs],
       {
         cwd: packageRoot(),
         env: {

@@ -1,8 +1,6 @@
-export const userValidationSchemas = {
-  create: {
-    safeParse(input: unknown) {
-      return { success: true as const, data: input };
-    },
+export const createUserValidationSchema = {
+  safeParse(input: unknown) {
+    return { success: true as const, data: input };
   },
 };
 

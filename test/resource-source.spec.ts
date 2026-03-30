@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveResourceHooksSource, resolveResourceSource, resolveResourceValidationSchemaSource } from '../src/compiler/resource-source';
+import { resolveResourceImportedValueSource, resolveResourceSource } from '../src/compiler/resource-source';
+import { normalizeApiKitConfig } from '../src/compiler/normalize-config';
 
 describe('resolveResourceSource', () => {
   it('supports a direct table identifier', async () => {
@@ -32,41 +33,30 @@ describe('resolveResourceSource', () => {
     expect(source.tableQueryName).toBe('tabelaCusta');
   });
 
-  it('resolves imported validation schema maps from the resource file', async () => {
+  it('resolves imported function validation references from the resource file', async () => {
     const { validationMapResource } = await import('./fixtures/resource-source/validation-map.resource');
-    const source = resolveResourceValidationSchemaSource(validationMapResource);
+    const source = resolveResourceImportedValueSource(
+      validationMapResource,
+      ['functions', 'create', 'validation'],
+      'functions.create.validation',
+    );
 
     expect(source?.importKind).toBe('named');
-    expect(source?.importName).toBe('userValidationSchemas');
-    expect(source?.accessExpression).toBe('userValidationSchemas');
+    expect(source?.importName).toBe('createUserValidationSchema');
+    expect(source?.accessExpression).toBe('createUserValidationSchema');
   });
 
-  it('resolves string validation schema modules as default imports', async () => {
+  it('normalizes string function validation modules as default imports', async () => {
     const { validationStringResource } = await import('./fixtures/resource-source/validation-string.resource');
-    const source = resolveResourceValidationSchemaSource(validationStringResource);
+    const normalized = normalizeApiKitConfig({
+      outputPath: './src/generated/api',
+      dbProviderToken: 'DATABASE',
+      resources: [validationStringResource],
+    });
 
-    expect(source?.importKind).toBe('default');
-    expect(source?.importName).toBe('__apiKitValidationSchema');
-    expect(source?.accessExpression).toBe('__apiKitValidationSchema');
-    expect(source?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/validation-schemas$/);
-  });
-
-  it('resolves imported hooks definitions from the resource file', async () => {
-    const { hooksMapResource } = await import('./fixtures/resource-source/hooks-map.resource');
-    const source = resolveResourceHooksSource(hooksMapResource);
-
-    expect(source?.importKind).toBe('named');
-    expect(source?.importName).toBe('userHooks');
-    expect(source?.accessExpression).toBe('userHooks');
-  });
-
-  it('resolves string hooks modules as default imports', async () => {
-    const { hooksStringResource } = await import('./fixtures/resource-source/hooks-string.resource');
-    const source = resolveResourceHooksSource(hooksStringResource);
-
-    expect(source?.importKind).toBe('default');
-    expect(source?.importName).toBe('__apiKitResourceHooks');
-    expect(source?.accessExpression).toBe('__apiKitResourceHooks');
-    expect(source?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/hooks-definitions$/);
+    const validation = normalized.resources[0]?.functions.create.validation;
+    expect(validation?.importKind).toBe('default');
+    expect(validation?.accessExpression).toBe('validationSchemas');
+    expect(validation?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/validation-schemas$/);
   });
 });

@@ -95,7 +95,7 @@ export default defineApiKitConfig({
 
 `defineResource()` is the rockstar of this library.
 
-Each Resource is the contract that tells the generator what API to create for one table: route shape, enabled endpoints, DTO shape, query features, guards to apply, and OpenAPI metadata. The generated code changes because of the Resource definition.
+Each Resource is the contract that tells the generator what API to create for one table: route shape, enabled functions, input/output DTOs, query capabilities, guards, docs, validation, and hooks. The generated code changes because of the Resource definition.
 
 Minimal example:
 
@@ -110,9 +110,9 @@ export const usersResource = defineResource({
 ```
 
 That small object already drives:
-- file and class names such as `UsersController`, `UsersService`, `FindUsersQueryDto`
+- file and class names such as `UsersController`, `UsersService`, `FindUsersInputDto`
 - default route base path `/users`
-- default CRUD endpoints
+- default CRUD functions
 - generated DTO fields inferred from the Drizzle table
 - id param type is inferred from primary key
 
@@ -124,30 +124,14 @@ import { users } from '../db/users';
 
 export const usersResource = defineResource({
   name: 'user',
+  basePath: 'admin/users',
   table: users,
-  route: {
-    basePath: 'admin/users',
+  guards: [AdminGuard],
+  docs: {
+    enabled: true,
+    tags: ['Admin Users'],
+    description: 'Administrative users resource.',
   },
-  endpoints: {
-    find: { enabled: true },
-    findOne: { enabled: true },
-    create: { enabled: true, transactional: true },
-    update: { enabled: true },
-    delete: false,
-  },
-  dto: {
-    create: {
-      include: ['name', 'email', 'status'],
-      optional: ['status'],
-    },
-    response: {
-      exclude: ['passwordHash'],
-    },
-  },
-  validation: {
-    schema: './users.validation',
-  },
-  hooks: './users.hooks',
   query: {
     pagination: {
       defaultPage: 1,
@@ -166,14 +150,67 @@ export const usersResource = defineResource({
     ],
     relations: [{ name: 'profile' }],
   },
-  openApi: {
-    tag: 'Admin Users',
-    summaryByEndpoint: {
-      find: 'List users',
-      findOne: 'Get one user',
-      create: 'Create a user',
-      update: 'Patch a user',
-      delete: 'Remove a user',
+  functions: {
+    find: {
+      input: {
+        mode: 'generate',
+      },
+      output: {
+        mode: 'generate',
+        exclude: ['passwordHash'],
+      },
+      guards: [ListUsersGuard],
+      summary: 'List users',
+      description: 'Returns filtered users.',
+    },
+    findOne: {
+      output: {
+        mode: 'generate',
+        exclude: ['passwordHash'],
+      },
+      summary: 'Get one user',
+      description: 'Returns one user by id.',
+    },
+    create: {
+      transactional: true,
+      input: {
+        mode: 'generate',
+        include: ['name', 'email', 'status'],
+        optional: ['status'],
+      },
+      output: {
+        mode: 'generate',
+        exclude: ['passwordHash'],
+      },
+      validation: './users.validation',
+      hooks: {
+        before: [
+          {
+            path: './hooks/normalize-user-input',
+            name: 'normalizeUserInput',
+            description: 'Normalize the create payload before persisting it.',
+          },
+        ],
+        after: ['./hooks/publish-created-event'],
+      },
+      summary: 'Create a user',
+      description: 'Creates a user and returns the inserted row.',
+    },
+    update: {
+      input: {
+        mode: 'generate',
+        include: ['name', 'email', 'status'],
+        optional: ['name', 'email', 'status'],
+      },
+      output: {
+        mode: 'generate',
+        exclude: ['passwordHash'],
+      },
+      summary: 'Patch a user',
+    },
+    delete: {
+      enabled: false,
+      summary: 'Remove a user',
     },
   },
 });
@@ -183,20 +220,14 @@ export const usersResource = defineResource({
 
 - `name`
   Drives singular/plural naming for files, classes, operation ids, and default route path. `name: 'user'` becomes `UsersController`, `findUsers`, and `/users`.
+- `basePath`
+  Overrides the default route segment. Without it, the generator uses the kebab-cased plural resource name.
 - `table`
   Required. This is the Drizzle table used to infer DTO fields and to generate the service/query code.
-- `route.basePath`
-  Overrides the default route segment. Without it, the generator uses the kebab-cased plural resource name.
-- `endpoints`
-  Controls which CRUD handlers are emitted. Disabled endpoints are not generated into the controller. Mutable endpoints also support `transactional: true`, which wraps the generated service operation and its hooks in a Drizzle transaction.
-- `dto.create`
-  Controls the generated create DTO from table columns. You can use `include`, `exclude`, `required`, and `optional`.
-- `dto.response`
-  Controls which table columns appear in the generated response DTO.
-- `validation.schema`
-  Adds a validation step inside the generated service before the underlying operation. It can point to a module path whose default export is a Zod schema, or to an imported schema object. It can also point to an object keyed by endpoint name such as `create`, `update`, or `find`.
-- `hooks`
-  Adds explicit before/after hooks around the generated service operation. Hooks can be declared globally for the resource and also per endpoint through `find`, `findOne`, `create`, `update`, and `delete`.
+- `guards`
+  Declares resource-wide Nest guards for the generated controller.
+- `docs`
+  Replaces the old `openApi` block. `docs.tags` drives `@ApiTags(...)`, `docs.enabled` turns method-level Swagger decorators on or off, and `docs.description` is emitted into the generated resource metadata.
 - `query.pagination`
   Enables or disables paginated `find`, and lets you set `defaultPage`, `defaultPageSize`, and `maxPageSize`.
 - `query.filters`
@@ -205,12 +236,33 @@ export const usersResource = defineResource({
   Declares sortable fields and optional default sort order.
 - `query.relations`
   Declares which relation names can be requested through `?include=...`.
-- `guards.resource`
-  Declares resource-wide Nest guards for the generated controller.
-- `openApi.tag`
-  Changes the `@ApiTags()` value on the generated controller.
-- `openApi.summaryByEndpoint`
-  Changes the `@ApiOperation({ summary })` text for each generated endpoint.
+- `functions`
+  This is the center of the Resource. Every generated API function lives here:
+  - `find`
+  - `findOne`
+  - `create`
+  - `update`
+  - `delete`
+
+Each function can configure:
+- `enabled`
+  Turns generation for that function on or off.
+- `input`
+  The function input DTO. This replaces the old root-level `dto.<function>`.
+- `output`
+  The function output DTO. This replaces the old root-level `dto.response`.
+- `guards`
+  Function-specific Nest guards emitted on that controller method.
+- `summary`
+  Swagger summary for that controller method.
+- `description`
+  Swagger description for that controller method.
+- `validation`
+  A direct schema reference or schema module path for that function.
+- `hooks`
+  Before/after hook references for that function.
+- `transactional`
+  Only for `create`, `update`, and `delete`. Wraps hooks and the underlying write in the same Drizzle transaction.
 
 ### Query capabilities exposed by `Resource.query`
 
@@ -264,25 +316,43 @@ GET /users?search={"$or":[{"status":{"$eq":"active"}},{"email":{"$eq":"john@exam
 
 ### DTO generation rules
 
-By default, DTOs are inferred from the Drizzle table:
-- create DTO fields come from table columns
-- nullable DB columns become `type | null`
-- non-null columns without defaults are required in create DTOs
-- columns with defaults, nullable columns, and primary keys become optional in create DTOs
-- response DTO fields are generated from table columns too
-- the id params DTO uses the primary key column, or falls back to `id`
+By default, generated DTOs are inferred from the Drizzle table:
+- `functions.find.input`
+  Generates the query DTO used by `find`, and reused by `findOne` for the query string.
+- `functions.create.input`
+  Generates the create body DTO.
+- `functions.update.input`
+  Generates the update body DTO.
+- `functions.find.output`
+  Generates the `find` response DTO.
+- `functions.findOne.output`
+  Generates the `findOne` response DTO.
+- `functions.create.output`
+  Generates the `create` response DTO.
+- `functions.update.output`
+  Generates the `update` response DTO.
 
-Example of narrowing the create and response payloads:
+For generated body DTOs:
+- nullable DB columns become `type | null`
+- non-null columns without defaults are required
+- columns with defaults, nullable columns, and primary keys become optional
+- `include`, `exclude`, `required`, and `optional` let you override the default shape
+
+Example:
 
 ```ts
-dto: {
+functions: {
   create: {
-    include: ['name', 'email', 'status'],
-    required: ['name', 'email'],
-    optional: ['status'],
-  },
-  response: {
-    exclude: ['passwordHash'],
+    input: {
+      mode: 'generate',
+      include: ['name', 'email', 'status'],
+      required: ['name', 'email'],
+      optional: ['status'],
+    },
+    output: {
+      mode: 'generate',
+      exclude: ['passwordHash'],
+    },
   },
 }
 ```
@@ -291,25 +361,27 @@ dto: {
 
 Validation is configured in two places:
 - config-level `validation.engine`
-- resource-level `validation.schema`
+- function-level `validation`
 
 Current engine support:
 - `zod`
 - custom engines through the `ValidationEngine` interface
 
 Default behavior is intentionally minimal:
-- if a resource declares `validation.schema` and you do nothing else, the generated code uses the built-in Zod engine automatically
+- if any function declares `validation` and you do nothing else, the generated code uses the built-in Zod engine automatically
 - you only need to point to a Zod schema, and the generated service will validate before executing the underlying operation
 - advanced custom-engine details live in [CUSTOM_VALIDATION.md](./CUSTOM_VALIDATION.md)
 
-Shared schema for the whole resource:
+Per-function validation:
 
 ```ts
 export const usersResource = defineResource({
   name: 'user',
   table: users,
-  validation: {
-    schema: './users.validation',
+  functions: {
+    create: {
+      validation: './users.validation',
+    },
   },
 });
 ```
@@ -322,50 +394,15 @@ Zero-config default setup:
 export const usersResource = defineResource({
   name: 'user',
   table: users,
-  validation: {
-    schema: './users.validation',
+  functions: {
+    create: {
+      validation: './users.validation',
+    },
   },
 });
 ```
 
 No config-level validation block is required for that setup.
-
-Endpoint-based schemas:
-
-```ts
-import { userValidationSchemas } from './users.validation';
-
-export const usersResource = defineResource({
-  name: 'user',
-  table: users,
-  validation: {
-    schema: userValidationSchemas,
-  },
-});
-```
-
-Example endpoint map:
-
-```ts
-export const userValidationSchemas = {
-  find: z.object({
-    page: z.coerce.number().int().min(1).optional(),
-    pageSize: z.coerce.number().int().min(1).optional(),
-  }),
-  create: z.object({
-    name: z.string().min(1),
-    email: z.string().email(),
-  }),
-  update: z.object({
-    params: z.object({
-      id: z.number().int().positive(),
-    }),
-    body: z.object({
-      name: z.string().min(1).optional(),
-    }),
-  }),
-};
-```
 
 Current generated validation inputs are:
 - `find` -> query object
@@ -380,7 +417,7 @@ The generated service emits explicit endpoint-specific schema selection and vali
 
 Hooks are configured in two places:
 - config-level `hooks`
-- resource-level `hooks`
+- function-level `functions.<name>.hooks`
 
 Hooks gives you the ability to extend the behavior adding your custom code to be executed before or afetr the underliing service operation:
 - validation resolves first
@@ -388,49 +425,51 @@ Hooks gives you the ability to extend the behavior adding your custom code to be
 - then we call your hook code before and after the operation
 - advanced hook details live in [CUSTOM_HOOKS.md](./CUSTOM_HOOKS.md)
 
-Example resource hooks:
+Example resource function hooks:
 
 ```ts
-import { userHooks } from './users.hooks';
-
 export const usersResource = defineResource({
   name: 'user',
   table: users,
-  hooks: userHooks,
+  functions: {
+    create: {
+      hooks: {
+        before: [
+          './hooks/measure-execution',
+          {
+            path: './hooks/normalize-user-input',
+            name: 'normalizeUserInput',
+            description: 'Normalize the create payload before persisting it.',
+          },
+        ],
+        after: ['./hooks/publish-created-event'],
+      },
+    },
+  },
 });
 ```
 
 Example config-level hooks:
 
 ```ts
-import { globalHooks } from './src/resources/global-hooks';
-
 export default defineApiKitConfig({
   outputPath: './src/generated/api',
   dbProviderToken: 'DRIZZLE_DB',
-  hooks: globalHooks,
+  hooks: {
+    before: ['./src/resources/hooks/measure-execution'],
+    after: ['./src/resources/hooks/track-metrics'],
+    create: {
+      before: [
+        {
+          path: './src/resources/hooks/attach-audit-stamp',
+          name: 'attachAuditStamp',
+          description: 'Attach audit metadata to the validated create input.',
+        },
+      ],
+    },
+  },
   resources: [usersResource],
 });
-```
-
-The hook definition shape is concentrated around the endpoints:
-
-```ts
-import type { ResourceHooksDefinition } from 'nest-drizzle-api-kit';
-
-export const userHooks = {
-  before: [measureExecution],
-  after: [trackMetrics],
-  create: {
-    before: [
-      {
-        use: normalizeUserInput,
-        description: 'Normalize the create payload before persisting it.',
-      },
-    ],
-    after: [publishCreatedEvent],
-  },
-} satisfies ResourceHooksDefinition;
 ```
 
 Hook behavior:
@@ -439,32 +478,26 @@ Hook behavior:
 - hooks can mutate `context.input`
 - `after` hooks can read or mutate `context.result`
 - every execution gets a fresh `state: Map<string, unknown>` shared across all hooks in that method call
-- hooks also receive `db`, `resourceName`, and `endpoint`
+- hooks also receive `db`, `resourceName`, and `functionName`
 - when `create`, `update`, or `delete` is configured with `transactional: true`, `context.db` is the Drizzle transaction object for that execution
 
 Generated order:
 - `config.before`
-- `config.<endpoint>.before`
-- `resource.before`
-- `resource.<endpoint>.before`
+- `config.<function>.before`
+- `resource.functions.<function>.hooks.before`
 - generated operation
-- `resource.<endpoint>.after`
-- `resource.after`
-- `config.<endpoint>.after`
+- `resource.functions.<function>.hooks.after`
+- `config.<function>.after`
 - `config.after`
 
-Like validation, `hooks` can point to:
-- a string module path whose default export is the hook definition object
-- an imported hook definition object reference
-
-The generated service keeps this explicit and visible, with direct `await hookName(context)` calls inside each method.
+The generated service keeps this explicit and visible, with direct imports and `await hookName(context)` calls inside each method.
 
 ### Transactional mutable endpoints
 
 `create`, `update`, and `delete` can opt into a Drizzle transaction:
 
 ```ts
-endpoints: {
+functions: {
   create: {
     transactional: true,
   },
@@ -494,25 +527,20 @@ Unless you disable them, a Resource generates:
 Example:
 
 ```ts
-endpoints: {
-  delete: false,
+functions: {
+  delete: {
+    enabled: false,
+  },
 }
 ```
 
-This disables delete handler code generation from the controller, while keeping the rest of the resource intact.
+This disables delete handler code generation from the controller while keeping the rest of the resource intact.
 
-### TODO Road Map and Working in progress Fix
+### Current limitations
 
-The Resource type already exposes some future-facing options, but they are not fully wired into the generated output yet. Based on the current implementation:
+Based on the current implementation:
 - `query.baseQuery` is rejected during validation and cannot be used yet
-- `guards.byEndpoint` is typed and validated, but controller generation currently applies only `guards.resource`
-- `dto.find`, `dto.findOne`, `dto.delete`, and custom DTO classes are typed, but the current templates still generate the query/id/update DTO files instead of swapping in custom classes
-- `openApi.enabled`, `openApi.description`, and `openApi.descriptionByEndpoint` exist in the type surface, but current templates only use `openApi.tag` and `openApi.summaryByEndpoint`
-- the generated find query DTO exposes `fields`, but the current generated query class does not apply field selection yet
-
-So the safest mental model is:
-- use Resource to drive route naming, endpoint enabling, generated create/response DTO shape, search/sort/include/pagination, controller guards at resource level, and OpenAPI tags/summaries
-- treat the items in the list above as not implemented yet, even if they already appear in TypeScript types
+- the generated `fields` query parameter is exposed in the DTO, but the generated query class does not apply field selection yet
 
 ## Local development
 

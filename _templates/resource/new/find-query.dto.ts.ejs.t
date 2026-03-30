@@ -1,8 +1,10 @@
 ---
-to: <%= findQueryDto %>
+to: <%= findInputDto %>
 ---
 <%
-const context = JSON.parse(contextJson);
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+const definition = context.dto.findInput;
 const filters = context.resource.query.filters ?? [];
 const sorts = context.resource.query.sorts ?? [];
 const relations = context.resource.query.relations ?? [];
@@ -63,7 +65,7 @@ const includeQueryStringExample = relationExamples.length === 0
 const searchQueryStringExample = searchExample
   ? `search=${searchExample}`
   : undefined;
-%><%= context.generatedHeader %>
+%><% if (definition) { %><%= context.generatedHeader %>
 import { ApiPropertyOptional } from '@nestjs/swagger';
 <% if (paginationEnabled) { %>
 import { Type } from 'class-transformer';
@@ -72,7 +74,7 @@ import { IsInt, IsOptional, Min } from 'class-validator';
 import { IsOptional } from 'class-validator';
 <% } %>
 
-export class <%= context.resource.classNames.findQueryDto %> {
+export class <%= definition.className %> {
 <% if (paginationEnabled) { %>
   @IsOptional()
   @Type(() => Number)
@@ -114,3 +116,4 @@ export class <%= context.resource.classNames.findQueryDto %> {
 <% } %>  })
   search?: string;
 }
+<% } %>

@@ -1,10 +1,10 @@
 ---
-to: <%= findOutputDto %>
+to: <%= updateOutputDto %>
 ---
 <%
 const fs = process.getBuiltinModule('fs');
 const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
-const definition = context.dto.findOutput;
+const definition = context.dto.updateOutput;
 %><% if (definition) { %><%= context.generatedHeader %>
 import { ApiProperty } from '@nestjs/swagger';
 

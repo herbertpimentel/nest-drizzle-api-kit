@@ -1,11 +1,13 @@
 import { defineResource } from '../../../src';
-import { tabelaCusta } from './tables';
-import { userValidationSchemas } from './validation-schemas';
+import { users } from '../../../examples/basic/src/db/users';
+import { createUserValidationSchema } from './validation-schemas';
 
 export const validationMapResource = defineResource({
   name: 'validation-map',
-  table: tabelaCusta as any,
-  validation: {
-    schema: userValidationSchemas,
+  table: users,
+  functions: {
+    create: {
+      validation: createUserValidationSchema,
+    },
   },
 });

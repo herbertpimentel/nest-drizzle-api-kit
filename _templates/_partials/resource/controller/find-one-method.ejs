@@ -1,5 +1,6 @@
 @Get(':id')
-@ApiOperation({ operationId: '<%- r.endpoints.findOne.operationId %>', summary: '<%- summary %>' })
-<%- signature %>
+<% if (guardsDecorator) { %><%- guardsDecorator %>
+<% } %><% if (docsDecorator) { %><%- docsDecorator %>
+<% } %><%- signature %>
 <%- call %>
 }

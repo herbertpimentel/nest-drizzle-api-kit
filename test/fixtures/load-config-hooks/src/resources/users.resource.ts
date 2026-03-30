@@ -1,14 +1,26 @@
 import { defineResource } from '../../../../../src';
 import { users } from '../db/users';
-import { userHooks } from './users.hooks';
 
 export const usersResource = defineResource({
   name: 'user',
   table: users,
-  endpoints: {
+  docs: {
+    enabled: true,
+    tags: ['Users'],
+  },
+  functions: {
     create: {
       transactional: true,
+      hooks: {
+        before: [
+          {
+            path: './hooks/normalize-user-input',
+            name: 'normalizeUserInput',
+            description: 'Normalize the create payload before persisting it.',
+          },
+        ],
+        after: ['./hooks/publish-created-event'],
+      },
     },
   },
-  hooks: userHooks,
 });

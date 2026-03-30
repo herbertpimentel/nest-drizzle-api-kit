@@ -1,9 +1,17 @@
 ---
-to: <%= updateDto %>
+to: <%= updateInputDto %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
-import { PartialType } from '@nestjs/swagger';
-import { <%= context.resource.classNames.createDto %> } from './<%= context.resource.fileNames.createDto.replace('.ts', '') %>';
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+const definition = context.dto.updateInput;
+%><% if (definition) { %><%= context.generatedHeader %>
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class <%= context.resource.classNames.updateDto %> extends PartialType(<%= context.resource.classNames.createDto %>) {
-}
+export class <%= definition.className %> {
+<% for (const field of definition.fields ?? []) { %>
+  @<%= field.optional ? 'ApiPropertyOptional' : 'ApiProperty' %>(<%- field.swaggerOptions.length > 0 || field.nullable ? `{ ${[...field.swaggerOptions, field.nullable ? 'nullable: true' : null].filter(Boolean).join(', ')} }` : '' %>)
+  <%= field.name %><%= field.optional ? '?' : '!' %>: <%= field.createTsType %>;
+
+<% } %>}
+<% } %>

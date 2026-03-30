@@ -1,23 +1,20 @@
-  async find(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%- findResultType %>> {
-<% if (hasHooks) { %><% if (validationEnabled) { %>    const validatedQuery = validateResourceInput(findValidationSchema, query);
+  async find(query: <%= queryType %>): Promise<<%- returnType %>> {
+<% if (hasHooks) { %><% if (validationExpression) { %>    const validatedQuery = validateResourceInput(<%= validationExpression %>, query);
 <% } else { %>    const input = query;
-<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
-<% } %>
-    const context = {
+<% } %>    const context = {
       db: this.db,
-      resourceName: '<%= context.resource.name %>',
-      endpoint: 'find' as const,
+      resourceName: '<%= resourceName %>',
+      functionName: 'find' as const,
       state: new Map<string, unknown>(),
-      input: <%= validationEnabled ? 'validatedQuery' : 'input' %>,
-      result: undefined as <%- findResultType %> | undefined,
+      input: <%= validationExpression ? 'validatedQuery' : 'input' %>,
+      result: undefined as <%- returnType %> | undefined,
     };
 
 <% for (const line of beforeHookLines) { %><%= line %>
-<% } %>    context.result = await new <%= context.resource.classNames.query %>(this.db).findMany(context.input);
+<% } %>    context.result = await new <%= queryClass %>(this.db).findMany(context.input);
 <% for (const line of afterHookLines) { %><%= line %>
-<% } %>
-    return context.result as <%- findResultType %>;
-<% } else if (validationEnabled) { %>    const validatedQuery = validateResourceInput(findValidationSchema, query);
-    return new <%= context.resource.classNames.query %>(this.db).findMany(validatedQuery);
-<% } else { %>    return new <%= context.resource.classNames.query %>(this.db).findMany(query);
+<% } %>    return context.result as <%- returnType %>;
+<% } else if (validationExpression) { %>    const validatedQuery = validateResourceInput(<%= validationExpression %>, query);
+    return new <%= queryClass %>(this.db).findMany(validatedQuery);
+<% } else { %>    return new <%= queryClass %>(this.db).findMany(query);
 <% } %>  }

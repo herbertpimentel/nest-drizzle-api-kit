@@ -1,5 +1,9 @@
 import { getTableColumns } from 'drizzle-orm';
-import type { InputDtoDefinition, ParamsDtoDefinition, ResponseDtoDefinition, ResourceDefinition } from '../definition/types';
+import type {
+  BodyInputDefinition,
+  OutputDefinition,
+  ResourceDefinition,
+} from '../definition/types';
 
 type DrizzleColumn = {
   name: string;
@@ -90,15 +94,15 @@ function swaggerOptionsForColumn(column: DrizzleColumn): string[] {
 
   switch (column.dataType) {
     case 'date':
-      options.push(`type: String`);
+      options.push('type: String');
       options.push(`format: ${doubleQuote('date-time')}`);
       break;
     case 'bigint':
-      options.push(`type: String`);
+      options.push('type: String');
       break;
     case 'buffer':
-      options.push(`type: String`);
-      options.push(`format: 'binary'`);
+      options.push('type: String');
+      options.push("format: 'binary'");
       break;
     case 'array':
       options.push('isArray: true');
@@ -113,13 +117,6 @@ function swaggerOptionsForColumn(column: DrizzleColumn): string[] {
   }
 
   return options;
-}
-
-function primaryColumn(resource: ResourceDefinition): [string, DrizzleColumn] | null {
-  const columns = Object.entries(getTableColumns(resource.table as TableColumnsInput));
-  return columns.find(([, column]) => Boolean((column as DrizzleColumn).primary))
-    ?? columns.find(([name]) => name === 'id')
-    ?? null;
 }
 
 function shouldIncludeField(name: string, include?: string[], exclude?: string[]): boolean {
@@ -154,12 +151,29 @@ function createField(
   };
 }
 
-export function buildCreateDtoFields(resource: ResourceDefinition): GeneratedDtoField[] {
-  const config = resource.dto?.create;
-  if (config?.mode === 'custom') {
-    return [];
+export function buildPrimaryIdField(resource: ResourceDefinition): GeneratedDtoField | null {
+  const columns = Object.entries(getTableColumns(resource.table as TableColumnsInput));
+  const primary = columns.find(([, column]) => Boolean((column as DrizzleColumn).primary))
+    ?? columns.find(([name]) => name === 'id')
+    ?? null;
+
+  if (!primary) {
+    return null;
   }
 
+  const [name, column] = primary;
+  return createField(name, column as DrizzleColumn, false, false);
+}
+
+export function buildGeneratedParamsInputFields(resource: ResourceDefinition): GeneratedDtoField[] {
+  const idField = buildPrimaryIdField(resource);
+  return idField ? [idField] : [];
+}
+
+export function buildGeneratedBodyInputFields(
+  resource: ResourceDefinition,
+  config: Extract<BodyInputDefinition, { mode?: 'generate' }> | undefined,
+): GeneratedDtoField[] {
   const forcedRequired = new Set(config?.required ?? []);
   const forcedOptional = new Set(config?.optional ?? []);
 
@@ -182,31 +196,14 @@ export function buildCreateDtoFields(resource: ResourceDefinition): GeneratedDto
     });
 }
 
-export function buildResponseDtoFields(resource: ResourceDefinition): GeneratedDtoField[] {
-  const config: ResponseDtoDefinition | undefined = resource.dto?.response;
-  if (config?.mode === 'custom') {
-    return [];
-  }
-
+export function buildGeneratedOutputFields(
+  resource: ResourceDefinition,
+  config: Extract<OutputDefinition, { mode?: 'generate' }> | undefined,
+): GeneratedDtoField[] {
   return Object.entries(getTableColumns(resource.table as TableColumnsInput))
     .filter(([name]) => shouldIncludeField(name, config?.include, config?.exclude))
     .map(([name, column]) => {
       const meta = column as DrizzleColumn;
       return createField(name, meta, false, !Boolean(meta.notNull));
     });
-}
-
-export function buildIdParamField(resource: ResourceDefinition): GeneratedDtoField | null {
-  const config: ParamsDtoDefinition | undefined = resource.dto?.findOne;
-  if (config?.mode === 'custom') {
-    return null;
-  }
-
-  const primary = primaryColumn(resource);
-  if (!primary) {
-    return null;
-  }
-
-  const [name, column] = primary;
-  return createField(name, column, false, false);
 }

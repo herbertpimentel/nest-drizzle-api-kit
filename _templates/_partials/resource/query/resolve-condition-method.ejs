@@ -2,7 +2,7 @@
     switch (filter.field) {
 <% for (const filter of filters) { %>      case '<%= filter.field %>':
         return buildAllowedColumnCondition(
-          <%= context.imports.tableAccessExpression %>.<%= filter.field %>,
+          <%= tableAccessExpression %>.<%= filter.field %>,
           filter.operator,
           filter.value,
           <%- JSON.stringify(filter.operators) %> as const,

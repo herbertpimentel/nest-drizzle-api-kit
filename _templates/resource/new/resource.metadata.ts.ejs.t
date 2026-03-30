@@ -1,16 +1,19 @@
 ---
 to: <%= metadata %>
 ---
-<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+<%
+const fs = process.getBuiltinModule('fs');
+const context = JSON.parse(fs.readFileSync(locals.contextFile, 'utf8'));
+%><%= context.generatedHeader %>
 export const <%= context.resource.classNames.resourceMetadata %> = {
-  name: '<%= context.resource.name %>',
-  routeBasePath: '<%= context.resource.routeBasePath %>',
+  name: <%- JSON.stringify(context.resource.name) %>,
+  basePath: <%- JSON.stringify(context.resource.basePath) %>,
+  docs: {
+    enabled: <%= context.resource.docs.enabled %>,
+    tags: <%- JSON.stringify(context.resource.docs.tags ?? []) %>,
+<% if (context.resource.docs.description) { %>    description: <%- JSON.stringify(context.resource.docs.description) %>,
+<% } %>  },
   operationIds: {
-    find: '<%= context.resource.endpoints.find.operationId %>',
-    findOne: '<%= context.resource.endpoints.findOne.operationId %>',
-    create: '<%= context.resource.endpoints.create.operationId %>',
-    update: '<%= context.resource.endpoints.update.operationId %>',
-    delete: '<%= context.resource.endpoints.delete.operationId %>',
-  },
-  baseQuery: undefined,
+<% for (const functionName of ['find', 'findOne', 'create', 'update', 'delete']) { %>    <%= functionName %>: <%- JSON.stringify(context.resource.functions[functionName].operationId) %>,
+<% } %>  },
 } as const;

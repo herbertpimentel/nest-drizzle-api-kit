@@ -2,8 +2,6 @@
 import { BadRequestException } from '@nestjs/common';
 
 
-type ResourceEndpointName = 'find' | 'findOne' | 'create' | 'update' | 'delete';
-
 type ValidationResult =
   | { success: true; data: unknown }
   | { success: false; errors: unknown };
@@ -20,20 +18,6 @@ type ValidationEngine = {
 type ZodLikeSchema = {
   safeParse: (input: unknown) => { success: boolean; data?: unknown; error?: { issues?: unknown } };
 };
-
-const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
-
-function isEndpointSchemaMap(value: unknown): value is Partial<Record<ResourceEndpointName, unknown>> {
-  return typeof value === 'object' && value !== null && endpointNames.some((endpoint) => endpoint in value);
-}
-
-export function resolveResourceValidationSchema(schemaSource: unknown, endpoint: ResourceEndpointName): unknown {
-  if (isEndpointSchemaMap(schemaSource)) {
-    return schemaSource[endpoint];
-  }
-
-  return schemaSource;
-}
 
 const zodValidationEngine: ValidationEngine = {
   validate({ schema, input }: ValidationContext): ValidationResult {

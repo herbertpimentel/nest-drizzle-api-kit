@@ -1,5 +1,6 @@
 @Post()
-@ApiOperation({ operationId: '<%- r.endpoints.create.operationId %>', summary: '<%- summary %>' })
-async create(@Body() body: <%= r.classNames.createDto %>) {
+<% if (guardsDecorator) { %><%- guardsDecorator %>
+<% } %><% if (docsDecorator) { %><%- docsDecorator %>
+<% } %>async create(@Body() body: <%= inputType %>) {
   return this.service.create(body);
 }

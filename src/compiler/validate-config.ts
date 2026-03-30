@@ -1,116 +1,158 @@
 import type {
   ApiKitConfig,
+  ApiKitHooksDefinition,
+  BodyInputDefinition,
+  OutputDefinition,
+  ParamsInputDefinition,
+  QueryInputDefinition,
   ResourceDefinition,
-  ResourceEndpointName,
-  ResourceHookEntry,
-  ResourceHookPhaseDefinition,
-  ResourceHooksDefinition,
+  ResourceFunctionCommonDefinition,
+  ResourceFunctionHooksDefinition,
+  ResourceFunctionName,
+  ResourceHookReference,
 } from '../definition/types';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-function validateHookEntry(entry: ResourceHookEntry, messagePrefix: string): void {
-  if (typeof entry === 'function') {
+function validateHookReference(entry: ResourceHookReference, messagePrefix: string): void {
+  if (typeof entry === 'string') {
+    assert(entry.trim().length > 0, `${messagePrefix} cannot be empty.`);
     return;
   }
 
-  assert(typeof entry === 'object' && entry !== null, `${messagePrefix} must be a hook function or a { use, name?, description? } object.`);
-  assert('use' in entry && typeof entry.use === 'function', `${messagePrefix}.use must be a hook function.`);
+  assert(typeof entry === 'object' && entry !== null, `${messagePrefix} must be a string path or an object with path/name/description.`);
+  assert(typeof entry.path === 'string' && entry.path.trim().length > 0, `${messagePrefix}.path must be a non-empty string.`);
 
-  if ('name' in entry && entry.name !== undefined) {
+  if (entry.name !== undefined) {
     assert(typeof entry.name === 'string' && entry.name.trim().length > 0, `${messagePrefix}.name must be a non-empty string.`);
   }
 
-  if ('description' in entry && entry.description !== undefined) {
-    assert(
-      typeof entry.description === 'string' && entry.description.trim().length > 0,
-      `${messagePrefix}.description must be a non-empty string.`,
-    );
+  if (entry.description !== undefined) {
+    assert(typeof entry.description === 'string' && entry.description.trim().length > 0, `${messagePrefix}.description must be a non-empty string.`);
   }
 }
 
-function validateHookPhase(phase: ResourceHookPhaseDefinition | undefined, messagePrefix: string): void {
+function validateHookPhase(phase: ResourceFunctionHooksDefinition | undefined, messagePrefix: string): void {
   if (!phase) {
     return;
   }
 
   if (phase.before !== undefined) {
-    assert(Array.isArray(phase.before), `${messagePrefix}.before must be an array of hook entries.`);
-    phase.before.forEach((entry, index) => validateHookEntry(entry, `${messagePrefix}.before[${index}]`));
+    assert(Array.isArray(phase.before), `${messagePrefix}.before must be an array.`);
+    phase.before.forEach((entry, index) => validateHookReference(entry, `${messagePrefix}.before[${index}]`));
   }
 
   if (phase.after !== undefined) {
-    assert(Array.isArray(phase.after), `${messagePrefix}.after must be an array of hook entries.`);
-    phase.after.forEach((entry, index) => validateHookEntry(entry, `${messagePrefix}.after[${index}]`));
+    assert(Array.isArray(phase.after), `${messagePrefix}.after must be an array.`);
+    phase.after.forEach((entry, index) => validateHookReference(entry, `${messagePrefix}.after[${index}]`));
   }
 }
 
-function validateHooksDefinition(hooks: ResourceHooksDefinition, messagePrefix: string): void {
+function validateConfigHooks(hooks: ApiKitHooksDefinition, messagePrefix: string): void {
   validateHookPhase(hooks, messagePrefix);
 
-  const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
-  for (const endpointName of endpointNames) {
-    validateHookPhase(hooks[endpointName], `${messagePrefix}.${endpointName}`);
+  const functionNames: ResourceFunctionName[] = ['find', 'findOne', 'create', 'update', 'delete'];
+  for (const functionName of functionNames) {
+    validateHookPhase(hooks[functionName], `${messagePrefix}.${functionName}`);
   }
+}
+
+function validateDtoDefinition(
+  definition: BodyInputDefinition | QueryInputDefinition | ParamsInputDefinition | OutputDefinition | undefined,
+  messagePrefix: string,
+): void {
+  if (!definition) {
+    return;
+  }
+
+  assert(typeof definition === 'object' && definition !== null, `${messagePrefix} must be an object.`);
+
+  if (definition.mode === 'custom') {
+    assert('class' in definition && typeof definition.class === 'function', `${messagePrefix}.class must be a class reference.`);
+    return;
+  }
+
+  if ('include' in definition && definition.include !== undefined) {
+    assert(Array.isArray(definition.include), `${messagePrefix}.include must be an array.`);
+  }
+
+  if ('exclude' in definition && definition.exclude !== undefined) {
+    assert(Array.isArray(definition.exclude), `${messagePrefix}.exclude must be an array.`);
+  }
+
+  if ('required' in definition && definition.required !== undefined) {
+    assert(Array.isArray(definition.required), `${messagePrefix}.required must be an array.`);
+  }
+
+  if ('optional' in definition && definition.optional !== undefined) {
+    assert(Array.isArray(definition.optional), `${messagePrefix}.optional must be an array.`);
+  }
+}
+
+function validateFunctionCommon(
+  definition: ResourceFunctionCommonDefinition | undefined,
+  functionName: ResourceFunctionName,
+  resourceName: string,
+): void {
+  if (!definition) {
+    return;
+  }
+
+  if (definition.guards !== undefined) {
+    assert(Array.isArray(definition.guards), `Resource "${resourceName}" function "${functionName}" guards must be an array.`);
+  }
+
+  if (definition.summary !== undefined) {
+    assert(typeof definition.summary === 'string' && definition.summary.trim().length > 0, `Resource "${resourceName}" function "${functionName}" summary must be a non-empty string.`);
+  }
+
+  if (definition.description !== undefined) {
+    assert(typeof definition.description === 'string' && definition.description.trim().length > 0, `Resource "${resourceName}" function "${functionName}" description must be a non-empty string.`);
+  }
+
+  if (definition.validation !== undefined) {
+    assert(
+      typeof definition.validation === 'string' || typeof definition.validation === 'object',
+      `Resource "${resourceName}" function "${functionName}" validation must be a string module path or an imported schema reference.`,
+    );
+
+    if (typeof definition.validation === 'string') {
+      assert(definition.validation.trim().length > 0, `Resource "${resourceName}" function "${functionName}" validation cannot be empty.`);
+    } else {
+      assert(definition.validation !== null, `Resource "${resourceName}" function "${functionName}" validation cannot be null.`);
+    }
+  }
+
+  validateHookPhase(definition.hooks, `Resource "${resourceName}" function "${functionName}" hooks`);
 }
 
 function validateResource(resource: ResourceDefinition): void {
   assert(resource.name.trim().length > 0, 'Resource name is required.');
   assert(resource.table && typeof resource.table === 'object', `Resource "${resource.name}" must provide a table object.`);
-  if (resource.validation) {
-    assert(
-      typeof resource.validation.schema === 'string' || typeof resource.validation.schema === 'object',
-      `Resource "${resource.name}" validation.schema must be a string module path or an imported schema reference.`,
-    );
-    if (typeof resource.validation.schema === 'string') {
-      assert(resource.validation.schema.trim().length > 0, `Resource "${resource.name}" validation.schema cannot be empty.`);
-    } else {
-      assert(resource.validation.schema !== null, `Resource "${resource.name}" validation.schema cannot be null.`);
-    }
+
+  if (resource.basePath !== undefined) {
+    assert(typeof resource.basePath === 'string' && resource.basePath.trim().length > 0, `Resource "${resource.name}" basePath must be a non-empty string.`);
   }
 
-  if (resource.hooks !== undefined) {
-    assert(
-      typeof resource.hooks === 'string' || typeof resource.hooks === 'object',
-      `Resource "${resource.name}" hooks must be a string module path or an imported hooks definition reference.`,
-    );
-    if (typeof resource.hooks === 'string') {
-      assert(resource.hooks.trim().length > 0, `Resource "${resource.name}" hooks cannot be empty.`);
-    } else {
-      assert(resource.hooks !== null, `Resource "${resource.name}" hooks cannot be null.`);
-      validateHooksDefinition(resource.hooks, `Resource "${resource.name}" hooks`);
-    }
+  if (resource.guards !== undefined) {
+    assert(Array.isArray(resource.guards), `Resource "${resource.name}" guards must be an array.`);
   }
 
-  const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
+  if (resource.docs !== undefined) {
+    assert(typeof resource.docs === 'object' && resource.docs !== null, `Resource "${resource.name}" docs must be an object.`);
 
-  for (const endpointName of endpointNames) {
-    const endpointValue = resource.endpoints ? (resource.endpoints as Partial<Record<ResourceEndpointName, unknown>>)[endpointName] : undefined;
-    const endpoint = typeof endpointValue === 'object' && endpointValue !== null
-      ? endpointValue as { enabled?: boolean; transactional?: boolean }
-      : undefined;
-    const endpointGuards = resource.guards?.byEndpoint?.[endpointName];
-    const endpointHooks = typeof resource.hooks === 'object' && resource.hooks !== null ? resource.hooks[endpointName] : undefined;
-    const endpointDisabled = endpointValue === false || endpoint?.enabled === false;
-    if (endpointDisabled && endpointGuards?.length) {
-      throw new Error(`Resource "${resource.name}" configures guards for disabled endpoint "${endpointName}".`);
-    }
-    if (endpointDisabled && (endpointHooks?.before?.length || endpointHooks?.after?.length)) {
-      throw new Error(`Resource "${resource.name}" configures hooks for disabled endpoint "${endpointName}".`);
+    if (resource.docs.enabled !== undefined) {
+      assert(typeof resource.docs.enabled === 'boolean', `Resource "${resource.name}" docs.enabled must be a boolean.`);
     }
 
-    if (endpoint && ('transactional' in endpoint)) {
-      assert(typeof endpoint.transactional === 'boolean', `Resource "${resource.name}" endpoint "${endpointName}" transactional must be a boolean.`);
-      assert(
-        endpointName === 'create' || endpointName === 'update' || endpointName === 'delete',
-        `Resource "${resource.name}" endpoint "${endpointName}" does not support transactional.`,
-      );
+    if (resource.docs.tags !== undefined) {
+      assert(Array.isArray(resource.docs.tags), `Resource "${resource.name}" docs.tags must be an array of strings.`);
     }
 
-    if (endpointDisabled && endpoint && 'transactional' in endpoint && endpoint.transactional) {
-      throw new Error(`Resource "${resource.name}" configures transactional for disabled endpoint "${endpointName}".`);
+    if (resource.docs.description !== undefined) {
+      assert(typeof resource.docs.description === 'string' && resource.docs.description.trim().length > 0, `Resource "${resource.name}" docs.description must be a non-empty string.`);
     }
   }
 
@@ -127,11 +169,41 @@ function validateResource(resource: ResourceDefinition): void {
     assert(relation.name.trim().length > 0, `Resource "${resource.name}" has an empty relation include name.`);
   }
 
-  const baseQuery = resource.query?.baseQuery;
-  if (baseQuery) {
-    throw new Error(
-      `Resource "${resource.name}" uses query.baseQuery, which is not supported by the direct generated query path yet.`,
-    );
+  if (resource.query?.baseQuery) {
+    throw new Error(`Resource "${resource.name}" uses query.baseQuery, which is not supported by the direct generated query path yet.`);
+  }
+
+  const find = resource.functions?.find;
+  validateFunctionCommon(find, 'find', resource.name);
+  validateDtoDefinition(find?.input, `Resource "${resource.name}" function "find" input`);
+  validateDtoDefinition(find?.output, `Resource "${resource.name}" function "find" output`);
+
+  const findOne = resource.functions?.findOne;
+  validateFunctionCommon(findOne, 'findOne', resource.name);
+  validateDtoDefinition(findOne?.input, `Resource "${resource.name}" function "findOne" input`);
+  validateDtoDefinition(findOne?.output, `Resource "${resource.name}" function "findOne" output`);
+
+  const create = resource.functions?.create;
+  validateFunctionCommon(create, 'create', resource.name);
+  validateDtoDefinition(create?.input, `Resource "${resource.name}" function "create" input`);
+  validateDtoDefinition(create?.output, `Resource "${resource.name}" function "create" output`);
+  if (create?.transactional !== undefined) {
+    assert(typeof create.transactional === 'boolean', `Resource "${resource.name}" function "create" transactional must be a boolean.`);
+  }
+
+  const update = resource.functions?.update;
+  validateFunctionCommon(update, 'update', resource.name);
+  validateDtoDefinition(update?.input, `Resource "${resource.name}" function "update" input`);
+  validateDtoDefinition(update?.output, `Resource "${resource.name}" function "update" output`);
+  if (update?.transactional !== undefined) {
+    assert(typeof update.transactional === 'boolean', `Resource "${resource.name}" function "update" transactional must be a boolean.`);
+  }
+
+  const deleteFunction = resource.functions?.delete;
+  validateFunctionCommon(deleteFunction, 'delete', resource.name);
+  validateDtoDefinition(deleteFunction?.input, `Resource "${resource.name}" function "delete" input`);
+  if (deleteFunction?.transactional !== undefined) {
+    assert(typeof deleteFunction.transactional === 'boolean', `Resource "${resource.name}" function "delete" transactional must be a boolean.`);
   }
 }
 
@@ -142,6 +214,7 @@ export function validateApiKitConfig(config: ApiKitConfig): void {
     typeof config.dbProviderToken === 'string' && config.dbProviderToken.trim().length > 0,
     'dbProviderToken is required. Your NestJS project must provide a matching provider token.',
   );
+
   if (config.dbSchema !== undefined) {
     assert(
       typeof config.dbSchema === 'string' || typeof config.dbSchema === 'object',
@@ -151,12 +224,14 @@ export function validateApiKitConfig(config: ApiKitConfig): void {
       assert(config.dbSchema.trim().length > 0, 'dbSchema, when provided as a string, must be a non-empty module path.');
     }
   }
+
   if (config.postGenerateCommand !== undefined) {
     assert(
       typeof config.postGenerateCommand === 'string' && config.postGenerateCommand.trim().length > 0,
       'postGenerateCommand, when provided, must be a non-empty string.',
     );
   }
+
   if (config.validation !== undefined) {
     assert(typeof config.validation === 'object' && config.validation !== null, 'validation, when provided, must be an object.');
     if (config.validation.engine !== undefined) {
@@ -175,14 +250,10 @@ export function validateApiKitConfig(config: ApiKitConfig): void {
       }
     }
   }
+
   if (config.hooks !== undefined) {
-    assert(typeof config.hooks === 'string' || typeof config.hooks === 'object', 'hooks, when provided, must be a string module path or an imported hooks definition reference.');
-    if (typeof config.hooks === 'string') {
-      assert(config.hooks.trim().length > 0, 'hooks cannot be empty.');
-    } else {
-      assert(config.hooks !== null, 'hooks cannot be null.');
-      validateHooksDefinition(config.hooks, 'hooks');
-    }
+    assert(typeof config.hooks === 'object' && config.hooks !== null, 'hooks, when provided, must be an object.');
+    validateConfigHooks(config.hooks, 'hooks');
   }
 
   const concreteResources = config.resources.filter((item): item is ResourceDefinition => typeof item !== 'string');
