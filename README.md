@@ -227,7 +227,7 @@ export const usersResource = defineResource({
 - `guards`
   Declares resource-wide Nest guards for the generated controller.
 - `docs`
-  Replaces the old `openApi` block. `docs.tags` drives `@ApiTags(...)`, `docs.enabled` turns method-level Swagger decorators on or off, and `docs.description` is emitted into the generated resource metadata.
+  Replaces the old `openApi` block. `docs.tags` drives `@ApiTags(...)`, `docs.enabled` turns method-level Swagger decorators on or off, and `docs.description` feeds the generated Swagger decorators for the resource functions.
 - `query.pagination`
   Enables or disables paginated `find`, and lets you set `defaultPage`, `defaultPageSize`, and `maxPageSize`.
 - `query.filters`

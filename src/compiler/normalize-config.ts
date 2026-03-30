@@ -491,14 +491,12 @@ function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefi
       service: `${pluralClass}Service`,
       module: `${pluralClass}Module`,
       query: `${pluralClass}Query`,
-      resourceMetadata: `${pluralClass}ResourceMetadata`,
     },
     fileNames: {
       controller: `${pluralFile}.controller.ts`,
       service: `${pluralFile}.service.ts`,
       module: `${pluralFile}.module.ts`,
       query: `${pluralFile}.query.ts`,
-      metadata: `${pluralFile}.resource.metadata.ts`,
     },
     guards: resolveResourceImportedValueSources(
       resource,

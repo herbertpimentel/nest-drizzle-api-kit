@@ -74,14 +74,12 @@ export type NormalizedResourceDefinition = {
     service: string;
     module: string;
     query: string;
-    resourceMetadata: string;
   };
   fileNames: {
     controller: string;
     service: string;
     module: string;
     query: string;
-    metadata: string;
   };
   guards: ImportedValueSource[];
   query: Omit<ResourceQueryDefinition, 'pagination'> & {

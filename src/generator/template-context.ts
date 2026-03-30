@@ -46,7 +46,6 @@ export type ResourceTemplateContext = {
   resourceDir: string;
   dtoDir: string;
   targets: GeneratedDtoTemplateTargets & {
-    metadata: string;
     service: string;
     query: string;
     controller: string;
@@ -906,7 +905,6 @@ export function buildResourceTemplateContext(
       findOneOutputDto: dtoTargetPath(dtoDir, dto.findOneOutput, Boolean(dto.findOneOutput && resource.functions.findOne.enabled)),
       createOutputDto: dtoTargetPath(dtoDir, dto.createOutput, Boolean(dto.createOutput && resource.functions.create.enabled)),
       updateOutputDto: dtoTargetPath(dtoDir, dto.updateOutput, Boolean(dto.updateOutput && resource.functions.update.enabled)),
-      metadata: path.join(resourceDir, resource.fileNames.metadata),
       service: path.join(resourceDir, resource.fileNames.service),
       query: queryEnabled ? path.join(resourceDir, resource.fileNames.query) : '',
       controller: path.join(resourceDir, resource.fileNames.controller),

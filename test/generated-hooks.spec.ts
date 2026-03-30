@@ -19,7 +19,6 @@ describe('generated services with hooks', () => {
 
       const serviceSource = await fs.readFile(path.join(generatedOutputDir, 'api', 'users', 'users.service.ts'), 'utf8');
       const indexSource = await fs.readFile(path.join(generatedOutputDir, 'api', 'users', 'index.ts'), 'utf8');
-      const metadataSource = await fs.readFile(path.join(generatedOutputDir, 'api', 'users', 'users.resource.metadata.ts'), 'utf8');
       const querySource = await fs.readFile(path.join(generatedOutputDir, 'api', 'users', 'users.query.ts'), 'utf8');
 
       expect(serviceSource).toContain("import measureExecution from '../../../resources/hooks/measure-execution';");
@@ -38,8 +37,7 @@ describe('generated services with hooks', () => {
       expect(serviceSource).toContain('context.result = rows[0] as CreateUserOutputDto;');
       expect(indexSource).not.toContain('&#39;');
       expect(indexSource).toContain("export * from './users.module';");
-      expect(metadataSource).not.toContain('&#39;');
-      expect(metadataSource).toContain('tags: ["Users"]');
+      await expect(fs.access(path.join(generatedOutputDir, 'api', 'users', 'users.resource.metadata.ts'))).rejects.toThrow();
       expect(querySource).not.toContain('buildAllowedColumnCondition');
     } finally {
       process.chdir(previousCwd);
