@@ -1,5 +1,10 @@
 import path from 'node:path';
-import type { NormalizedApiKitConfig, NormalizedResourceDefinition } from '../compiler/models';
+import type {
+  NormalizedApiKitConfig,
+  NormalizedHookCallDefinition,
+  NormalizedResourceDefinition,
+} from '../compiler/models';
+import type { ResourceEndpointName } from '../definition/types';
 import { resolveDbProviderToken } from '../compiler/resource-source';
 import { buildControllerImportConfig, type ControllerImportConfig } from './template-imports';
 
@@ -37,6 +42,18 @@ export type ResourceTemplateContext = {
     importPath: string | null;
   };
   controller: ControllerImportConfig;
+  hooks?: Record<ResourceEndpointName, {
+    before: Array<{
+      constName: string;
+      resolveExpression: string;
+      description?: string;
+    }>;
+    after: Array<{
+      constName: string;
+      resolveExpression: string;
+      description?: string;
+    }>;
+  }>;
   imports: {
     tableImportPath: string;
     tableImportKind: 'default' | 'named' | 'namespace';
@@ -52,12 +69,23 @@ export type ResourceTemplateContext = {
     dbProviderToken: string;
     commonTypesImportPath: string;
     commonQueryImportPath: string;
+    commonHooksImportPath: string;
     commonValidationImportPath: string;
     validationImportPath?: string;
     validationImportKind?: 'default' | 'named' | 'namespace';
     validationImportName?: string;
     validationImportSourceName?: string;
     validationAccessExpression?: string;
+    configHooksImportPath?: string;
+    configHooksImportKind?: 'default' | 'named' | 'namespace';
+    configHooksImportName?: string;
+    configHooksImportSourceName?: string;
+    configHooksAccessExpression?: string;
+    resourceHooksImportPath?: string;
+    resourceHooksImportKind?: 'default' | 'named' | 'namespace';
+    resourceHooksImportName?: string;
+    resourceHooksImportSourceName?: string;
+    resourceHooksAccessExpression?: string;
   };
 };
 
@@ -86,6 +114,7 @@ export type RootTemplateContext = {
     commonDb: string;
     commonTypes: string;
     commonQuery: string;
+    commonHooks: string;
     commonValidation: string;
     commonIndex: string;
   };
@@ -102,6 +131,34 @@ function inferGuardImportPath(resource: NormalizedResourceDefinition): string | 
   return candidate && candidate.startsWith('.') ? candidate : null;
 }
 
+function uniquifyHookCallNames(
+  entries: Array<{ suggestedName: string }>,
+): string[] {
+  const counts = new Map<string, number>();
+
+  return entries.map(({ suggestedName }) => {
+    const nextCount = (counts.get(suggestedName) ?? 0) + 1;
+    counts.set(suggestedName, nextCount);
+    return nextCount === 1 ? suggestedName : `${suggestedName}${nextCount}`;
+  });
+}
+
+function buildHookCalls(
+  entries: Array<NormalizedHookCallDefinition & { rootAccessExpression: string }>,
+): Array<{
+  constName: string;
+  resolveExpression: string;
+  description?: string;
+}> {
+  const names = uniquifyHookCallNames(entries);
+
+  return entries.map((entry, index) => ({
+    constName: names[index]!,
+    resolveExpression: `${entry.rootAccessExpression}${entry.accessor}`,
+    ...(entry.description ? { description: entry.description } : {}),
+  }));
+}
+
 export function buildResourceTemplateContext(
   config: NormalizedApiKitConfig,
   resource: NormalizedResourceDefinition,
@@ -115,6 +172,14 @@ export function buildResourceTemplateContext(
   ).sort();
   const dbProviderToken = resolveDbProviderToken(config);
   const controller = buildControllerImportConfig(resource);
+  const configHooksImportAlias = '__apiKitConfigHooksSource';
+  const resourceHooksImportAlias = '__apiKitResourceHooksSource';
+  const configHooksAccessExpression = config.hooks
+    ? rewriteRootIdentifier(config.hooks.source.accessExpression, config.hooks.source.importName, configHooksImportAlias)
+    : undefined;
+  const resourceHooksAccessExpression = resource.hooks
+    ? rewriteRootIdentifier(resource.hooks.source.accessExpression, resource.hooks.source.importName, resourceHooksImportAlias)
+    : undefined;
   const serializableResource: SerializableResourceTemplateModel = {
     ...resource,
     original: {
@@ -124,6 +189,48 @@ export function buildResourceTemplateContext(
         : {}),
     },
   };
+  const hooks = Object.fromEntries(
+    (['find', 'findOne', 'create', 'update', 'delete'] as ResourceEndpointName[]).map((endpointName) => {
+      const before = buildHookCalls([
+        ...(config.hooks?.before.map((entry) => ({
+          ...entry,
+          rootAccessExpression: configHooksAccessExpression!,
+        })) ?? []),
+        ...(config.hooks?.endpoints[endpointName].before.map((entry) => ({
+          ...entry,
+          rootAccessExpression: configHooksAccessExpression!,
+        })) ?? []),
+        ...(resource.hooks?.before.map((entry) => ({
+          ...entry,
+          rootAccessExpression: resourceHooksAccessExpression!,
+        })) ?? []),
+        ...(resource.hooks?.endpoints[endpointName].before.map((entry) => ({
+          ...entry,
+          rootAccessExpression: resourceHooksAccessExpression!,
+        })) ?? []),
+      ]);
+      const after = buildHookCalls([
+        ...(resource.hooks?.endpoints[endpointName].after.map((entry) => ({
+          ...entry,
+          rootAccessExpression: resourceHooksAccessExpression!,
+        })) ?? []),
+        ...(resource.hooks?.after.map((entry) => ({
+          ...entry,
+          rootAccessExpression: resourceHooksAccessExpression!,
+        })) ?? []),
+        ...(config.hooks?.endpoints[endpointName].after.map((entry) => ({
+          ...entry,
+          rootAccessExpression: configHooksAccessExpression!,
+        })) ?? []),
+        ...(config.hooks?.after.map((entry) => ({
+          ...entry,
+          rootAccessExpression: configHooksAccessExpression!,
+        })) ?? []),
+      ]);
+
+      return [endpointName, { before, after }];
+    }),
+  ) as ResourceTemplateContext['hooks'];
 
   return {
     generatedHeader: GENERATED_HEADER,
@@ -148,6 +255,7 @@ export function buildResourceTemplateContext(
       importPath: inferGuardImportPath(resource),
     },
     controller,
+    ...(hooks ? { hooks } : {}),
     imports: {
       tableImportPath: toModuleImport(servicePath, path.resolve(path.dirname(resource.source.sourceFile), resource.source.tableImportSourceFile)),
       tableImportKind: resource.source.tableImportKind,
@@ -167,6 +275,7 @@ export function buildResourceTemplateContext(
       dbProviderToken,
       commonTypesImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'types.ts')),
       commonQueryImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'query.ts')),
+      commonHooksImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'hooks.ts')),
       commonValidationImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'validation.ts')),
       ...(resource.validation
         ? {
@@ -178,6 +287,24 @@ export function buildResourceTemplateContext(
             validationImportName: resource.validation.schemaSource.importName,
             validationImportSourceName: resource.validation.schemaSource.importSourceName,
             validationAccessExpression: resource.validation.schemaSource.accessExpression,
+          }
+        : {}),
+      ...(config.hooks
+        ? {
+            configHooksImportPath: toModuleImport(servicePath, config.hooks.source.sourceFile),
+            configHooksImportKind: config.hooks.source.importKind,
+            configHooksImportName: configHooksImportAlias,
+            configHooksImportSourceName: config.hooks.source.importSourceName,
+            configHooksAccessExpression: configHooksAccessExpression!,
+          }
+        : {}),
+      ...(resource.hooks
+        ? {
+            resourceHooksImportPath: toModuleImport(servicePath, resource.hooks.source.sourceFile),
+            resourceHooksImportKind: resource.hooks.source.importKind,
+            resourceHooksImportName: resourceHooksImportAlias,
+            resourceHooksImportSourceName: resource.hooks.source.importSourceName,
+            resourceHooksAccessExpression: resourceHooksAccessExpression!,
           }
         : {}),
     },
@@ -246,6 +373,7 @@ export function buildRootTemplateContext(config: NormalizedApiKitConfig): RootTe
       commonDb: commonDbPath,
       commonTypes: commonTypesPath,
       commonQuery: path.join(config.outputPath, 'common', 'query.ts'),
+      commonHooks: path.join(config.outputPath, 'common', 'hooks.ts'),
       commonValidation: path.join(config.outputPath, 'common', 'validation.ts'),
       commonIndex: path.join(config.outputPath, 'common', 'index.ts'),
     },

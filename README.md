@@ -12,7 +12,7 @@ This repository is not a fully finished production yet.
 
 Implemented:
 - TS config and resource definition API
-- validation + normalization pipeline
+- validation + hooks pipeline
 - Hygen-based generation pipeline
 - CLI commands: `init`, `scan`, `generate`, `watch`, `check`, `clean`
 - runtime base classes
@@ -148,6 +148,7 @@ export const usersResource = defineResource({
   validation: {
     schema: './users.validation',
   },
+  hooks: './users.hooks',
   query: {
     pagination: {
       defaultPage: 1,
@@ -194,7 +195,9 @@ export const usersResource = defineResource({
 - `dto.response`
   Controls which table columns appear in the generated response DTO.
 - `validation.schema`
-  Adds a validation step before the generated endpoint calls the service. It can point to a module path whose default export is a Zod schema, or to an imported schema object. It can also point to an object keyed by endpoint name such as `create`, `update`, or `find`.
+  Adds a validation step inside the generated service before the underlying operation. It can point to a module path whose default export is a Zod schema, or to an imported schema object. It can also point to an object keyed by endpoint name such as `create`, `update`, or `find`.
+- `hooks`
+  Adds explicit before/after hooks around the generated service operation. Hooks can be declared globally for the resource and also per endpoint through `find`, `findOne`, `create`, `update`, and `delete`.
 - `query.pagination`
   Enables or disables paginated `find`, and lets you set `defaultPage`, `defaultPageSize`, and `maxPageSize`.
 - `query.filters`
@@ -373,6 +376,87 @@ Current generated validation inputs are:
 - `delete` -> `{ params }`
 
 The generated service emits explicit endpoint-specific schema selection and validates before the underlying operation. If the schema fails, it throws `BadRequestException` with your schema messages.
+
+### Hooks
+
+Hooks are configured in two places:
+- config-level `hooks`
+- resource-level `hooks`
+
+Hooks gives you the ability to extend the behavior adding your custom code to be executed before or afetr the underliing service operation:
+- validation resolves first
+- we wrap a context that is passed down for your hook
+- then we call your hook code before and after the operation
+- advanced hook details live in [CUSTOM_HOOKS.md](./CUSTOM_HOOKS.md)
+
+Example resource hooks:
+
+```ts
+import { userHooks } from './users.hooks';
+
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  hooks: userHooks,
+});
+```
+
+Example config-level hooks:
+
+```ts
+import { globalHooks } from './src/resources/global-hooks';
+
+export default defineApiKitConfig({
+  outputPath: './src/generated/api',
+  dbProviderToken: 'DRIZZLE_DB',
+  hooks: globalHooks,
+  resources: [usersResource],
+});
+```
+
+The hook definition shape is concentrated around the endpoints:
+
+```ts
+import type { ResourceHooksDefinition } from 'nest-drizzle-api-kit';
+
+export const userHooks = {
+  before: [measureExecution],
+  after: [trackMetrics],
+  create: {
+    before: [
+      {
+        use: normalizeUserInput,
+        description: 'Normalize the create payload before persisting it.',
+      },
+    ],
+    after: [publishCreatedEvent],
+  },
+} satisfies ResourceHooksDefinition;
+```
+
+Hook behavior:
+- `before` hooks receive the validated input for that endpoint
+- hooks can mutate `context.input`
+- `after` hooks can read or mutate `context.result`
+- every execution gets a fresh `state: Map<string, unknown>` shared across all hooks in that method call
+- hooks also receive `db`, `resourceName`, and `endpoint`
+
+Generated order:
+- `config.before`
+- `config.<endpoint>.before`
+- `resource.before`
+- `resource.<endpoint>.before`
+- generated operation
+- `resource.<endpoint>.after`
+- `resource.after`
+- `config.<endpoint>.after`
+- `config.after`
+
+Like validation, `hooks` can point to:
+- a string module path whose default export is the hook definition object
+- an imported hook definition object reference
+
+The generated service keeps this explicit and visible, with direct `await hookName(context)` calls inside each method.
 
 
 ### Endpoint generation rules

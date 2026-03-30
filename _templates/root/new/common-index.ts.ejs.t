@@ -5,4 +5,5 @@ to: <%= commonIndex %>
 export * from './db';
 export * from './types';
 export * from './query';
+export * from './hooks';
 export * from './validation';

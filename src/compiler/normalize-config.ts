@@ -1,11 +1,38 @@
-import type { ApiKitConfig, ResourceDefinition, ResourceEndpointName } from '../definition/types';
-import type { NormalizedApiKitConfig, NormalizedEndpointDefinition, NormalizedResourceDefinition } from './models';
+import { createJiti } from 'jiti';
+import type {
+  ApiKitConfig,
+  ResourceDefinition,
+  ResourceEndpointName,
+  ResourceHookEntry,
+  ResourceHooksDefinition,
+  ResourceHooksSourceDefinition,
+} from '../definition/types';
+import type {
+  NormalizedApiKitConfig,
+  NormalizedEndpointDefinition,
+  NormalizedHookCallDefinition,
+  NormalizedHooksDefinition,
+  NormalizedResourceDefinition,
+} from './models';
 import { buildCreateDtoFields, buildIdParamField, buildResponseDtoFields } from './dto-fields';
 import { kebabCase, pascalCase, pluralize, singularize } from './naming';
-import { resolveDbSchemaType, resolveResourceSource, resolveResourceValidationSchemaSource, resolveValidationEngineSource } from './resource-source';
+import {
+  resolveConfigHooksSource,
+  resolveDbSchemaType,
+  resolveResourceHooksSource,
+  resolveResourceSource,
+  resolveResourceValidationSchemaSource,
+  resolveValidationEngineSource,
+  type ResolvedHooksSource,
+} from './resource-source';
 import { validateApiKitConfig } from './validate-config';
 
 const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
+const jiti = createJiti(__filename, {
+  fsCache: false,
+  interopDefault: false,
+  moduleCache: false,
+});
 
 function operationIdFor(endpoint: ResourceEndpointName, singular: string, plural: string): string {
   const singularPascal = pascalCase(singular);
@@ -51,8 +78,88 @@ function pathFor(endpoint: ResourceEndpointName): string {
   }
 }
 
+function isHookMetadataEntry(entry: ResourceHookEntry): entry is Extract<ResourceHookEntry, { use: (...args: never[]) => unknown }> {
+  return typeof entry === 'object' && entry !== null && 'use' in entry;
+}
+
+function toCamelCase(input: string): string {
+  const pascal = pascalCase(input);
+  return pascal ? `${pascal.charAt(0).toLowerCase()}${pascal.slice(1)}` : 'hook';
+}
+
+function buildHookFallbackName(pathSegments: string[], index: number): string {
+  const readableSegments = pathSegments.map((segment) => segment.replace(/[^\w]+/g, ' ')).filter(Boolean).join(' ');
+  return toCamelCase(`${readableSegments} hook ${index + 1}`);
+}
+
+function suggestHookName(entry: ResourceHookEntry, pathSegments: string[], index: number): string {
+  if (isHookMetadataEntry(entry) && typeof entry.name === 'string' && entry.name.trim().length > 0) {
+    return toCamelCase(entry.name);
+  }
+
+  const hook = typeof entry === 'function' ? entry : entry.use;
+  if (typeof hook.name === 'string' && hook.name.trim().length > 0) {
+    return toCamelCase(hook.name);
+  }
+
+  return buildHookFallbackName(pathSegments, index);
+}
+
+function toHookAccessor(pathSegments: string[]): string {
+  return pathSegments
+    .map((segment, index) => (/^\d+$/.test(segment) ? `?.[${segment}]` : index === 0 ? `.${segment}` : `?.${segment}`))
+    .join('');
+}
+
+function loadHooksDefinition(source: ResourceHooksSourceDefinition, sourceInfo: ResolvedHooksSource, ownerLabel: string): ResourceHooksDefinition {
+  if (typeof source !== 'string') {
+    return source;
+  }
+
+  const mod = jiti(sourceInfo.sourceFile) as Record<string, unknown>;
+  const hooks = (mod.default ?? mod) as unknown;
+  if (!hooks || typeof hooks !== 'object') {
+    throw new Error(`${ownerLabel} hooks module "${sourceInfo.sourceFile}" must export a hooks definition object as its default export.`);
+  }
+
+  return hooks as ResourceHooksDefinition;
+}
+
+function normalizeHookEntries(entries: ResourceHookEntry[] | undefined, pathSegments: string[]): NormalizedHookCallDefinition[] {
+  if (!entries?.length) {
+    return [];
+  }
+
+  return entries.map((entry, index) => ({
+    accessor: toHookAccessor([...pathSegments, String(index)]),
+    suggestedName: suggestHookName(entry, pathSegments, index),
+    ...(isHookMetadataEntry(entry) && entry.description ? { description: entry.description } : {}),
+  }));
+}
+
+function normalizeHooks(hooks: ResourceHooksDefinition, source: ResolvedHooksSource): NormalizedHooksDefinition {
+  return {
+    source,
+    before: normalizeHookEntries(hooks.before, ['before']),
+    after: normalizeHookEntries(hooks.after, ['after']),
+    endpoints: Object.fromEntries(
+      endpointNames.map((endpointName) => [
+        endpointName,
+        {
+          before: normalizeHookEntries(hooks[endpointName]?.before, [endpointName, 'before']),
+          after: normalizeHookEntries(hooks[endpointName]?.after, [endpointName, 'after']),
+        },
+      ]),
+    ) as NormalizedHooksDefinition['endpoints'],
+  };
+}
+
 function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefinition {
   const source = resolveResourceSource(resource);
+  const hooksSource = resolveResourceHooksSource(resource);
+  const hooks = resource.hooks && hooksSource
+    ? normalizeHooks(loadHooksDefinition(resource.hooks, hooksSource, `Resource "${resource.name}"`), hooksSource)
+    : undefined;
   const pagination = resource.query?.pagination;
   const paginationOptions = typeof pagination === 'object' && pagination !== null ? pagination : undefined;
   const singularName = singularize(resource.name);
@@ -130,6 +237,11 @@ function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefi
           },
         }
       : {}),
+    ...(hooks
+      ? {
+          hooks,
+        }
+      : {}),
     generatedDtos: {
       createFields: buildCreateDtoFields(resource),
       responseFields: buildResponseDtoFields(resource),
@@ -154,6 +266,10 @@ export function normalizeApiKitConfig(config: ApiKitConfig): NormalizedApiKitCon
   const dbSchemaSource = resolveDbSchemaType(config);
   const hasValidationSchemas = resources.some((resource) => Boolean(resource.validation?.schema));
   const validationEngineSource = resolveValidationEngineSource(config);
+  const hooksSource = resolveConfigHooksSource(config);
+  const hooks = config.hooks && hooksSource
+    ? normalizeHooks(loadHooksDefinition(config.hooks, hooksSource, 'Config'), hooksSource)
+    : undefined;
   return {
     outputPath: config.outputPath,
     ...(config.dbProviderToken ? { dbProviderToken: config.dbProviderToken } : {}),
@@ -168,6 +284,11 @@ export function normalizeApiKitConfig(config: ApiKitConfig): NormalizedApiKitCon
             : {
                 engineName: 'zod',
               },
+        }
+      : {}),
+    ...(hooks
+      ? {
+          hooks,
         }
       : {}),
     ...(config.postGenerateCommand ? { postGenerateCommand: config.postGenerateCommand } : {}),

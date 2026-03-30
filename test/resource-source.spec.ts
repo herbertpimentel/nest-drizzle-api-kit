@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveResourceSource, resolveResourceValidationSchemaSource } from '../src/compiler/resource-source';
+import { resolveResourceHooksSource, resolveResourceSource, resolveResourceValidationSchemaSource } from '../src/compiler/resource-source';
 
 describe('resolveResourceSource', () => {
   it('supports a direct table identifier', async () => {
@@ -49,5 +49,24 @@ describe('resolveResourceSource', () => {
     expect(source?.importName).toBe('__apiKitValidationSchema');
     expect(source?.accessExpression).toBe('__apiKitValidationSchema');
     expect(source?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/validation-schemas$/);
+  });
+
+  it('resolves imported hooks definitions from the resource file', async () => {
+    const { hooksMapResource } = await import('./fixtures/resource-source/hooks-map.resource');
+    const source = resolveResourceHooksSource(hooksMapResource);
+
+    expect(source?.importKind).toBe('named');
+    expect(source?.importName).toBe('userHooks');
+    expect(source?.accessExpression).toBe('userHooks');
+  });
+
+  it('resolves string hooks modules as default imports', async () => {
+    const { hooksStringResource } = await import('./fixtures/resource-source/hooks-string.resource');
+    const source = resolveResourceHooksSource(hooksStringResource);
+
+    expect(source?.importKind).toBe('default');
+    expect(source?.importName).toBe('__apiKitResourceHooks');
+    expect(source?.accessExpression).toBe('__apiKitResourceHooks');
+    expect(source?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/hooks-definitions$/);
   });
 });

@@ -9,6 +9,28 @@ import type {
 } from '../definition/types';
 import type { GeneratedDtoField } from './dto-fields';
 
+export type NormalizedHookCallDefinition = {
+  accessor: string;
+  suggestedName: string;
+  description?: string;
+};
+
+export type NormalizedHooksDefinition = {
+  source: {
+    sourceFile: string;
+    accessExpression: string;
+    importKind: 'default' | 'named' | 'namespace';
+    importName: string;
+    importSourceName: string;
+  };
+  before: NormalizedHookCallDefinition[];
+  after: NormalizedHookCallDefinition[];
+  endpoints: Record<ResourceEndpointName, {
+    before: NormalizedHookCallDefinition[];
+    after: NormalizedHookCallDefinition[];
+  }>;
+};
+
 export type NormalizedEndpointDefinition = {
   name: ResourceEndpointName;
   enabled: boolean;
@@ -62,6 +84,7 @@ export type NormalizedResourceDefinition = {
       importSourceName: string;
     };
   };
+  hooks?: NormalizedHooksDefinition;
   generatedDtos: {
     createFields: GeneratedDtoField[];
     responseFields: GeneratedDtoField[];
@@ -78,7 +101,7 @@ export type NormalizedResourceDefinition = {
   };
 };
 
-export type NormalizedApiKitConfig = Omit<ApiKitConfig, 'resources'> & {
+export type NormalizedApiKitConfig = Omit<ApiKitConfig, 'resources' | 'validation' | 'hooks'> & {
   cleanOutput: boolean;
   rootModuleClassName: string;
   rootModuleFileName: string;
@@ -100,6 +123,7 @@ export type NormalizedApiKitConfig = Omit<ApiKitConfig, 'resources'> & {
       importSourceName: string;
     };
   };
+  hooks?: NormalizedHooksDefinition;
   postGenerateCommand?: string;
   resources: NormalizedResourceDefinition[];
 };

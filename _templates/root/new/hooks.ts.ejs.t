@@ -1,0 +1,40 @@
+---
+to: <%= commonHooks %>
+---
+<% const context = JSON.parse(contextJson); %><%= context.generatedHeader %>
+type ResourceEndpointName = 'find' | 'findOne' | 'create' | 'update' | 'delete';
+
+export type ResourceHookContext<TInput = unknown, TResult = unknown, TDb = unknown> = {
+  db: TDb;
+  resourceName: string;
+  endpoint: ResourceEndpointName;
+  state: Map<string, unknown>;
+  input: TInput;
+  result?: TResult;
+};
+
+type ResourceHook<TInput = unknown, TResult = unknown, TDb = unknown> = (
+  context: ResourceHookContext<TInput, TResult, TDb>,
+) => void | Promise<void>;
+
+type ResourceHookEntry<TInput = unknown, TResult = unknown, TDb = unknown> =
+  | ResourceHook<TInput, TResult, TDb>
+  | {
+      use: ResourceHook<TInput, TResult, TDb>;
+      name?: string;
+      description?: string;
+    };
+
+export function resolveResourceHook<TInput = unknown, TResult = unknown, TDb = unknown>(
+  entry: ResourceHookEntry<TInput, TResult, TDb> | undefined,
+): ResourceHook<TInput, TResult, TDb> {
+  if (typeof entry === 'function') {
+    return entry;
+  }
+
+  if (entry && typeof entry === 'object' && 'use' in entry && typeof entry.use === 'function') {
+    return entry.use;
+  }
+
+  throw new Error('The generated hook reference is missing or invalid. Regenerate the API after fixing the configured hooks.');
+}

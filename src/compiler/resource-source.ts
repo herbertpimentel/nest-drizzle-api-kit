@@ -36,6 +36,7 @@ export type ResolvedResourceSource = {
 };
 
 export type ResolvedConfigSchemaSource = ResolvedImportedValueSource;
+export type ResolvedHooksSource = ResolvedImportedValueSource;
 export type ResolvedValidationEngineSource =
   | {
       kind: 'builtin';
@@ -370,6 +371,56 @@ export function resolveValidationEngineSource(config: ApiKitConfig): ResolvedVal
   };
 }
 
+export function resolveConfigHooksSource(config: ApiKitConfig): ResolvedHooksSource | null {
+  const hooks = config.hooks;
+  if (!hooks) {
+    return null;
+  }
+
+  const configSourceFilePath = getConfigMeta(config)?.sourceFile;
+  if (typeof hooks === 'string') {
+    const baseDir = configSourceFilePath ? path.dirname(configSourceFilePath) : process.cwd();
+    return {
+      sourceFile: path.resolve(baseDir, hooks),
+      accessExpression: '__apiKitConfigHooks',
+      importKind: 'default',
+      importName: '__apiKitConfigHooks',
+      importSourceName: 'default',
+    };
+  }
+
+  if (!configSourceFilePath) {
+    throw new Error(
+      'hooks were provided as an object, but the config source file could not be determined. Use a string module path or load the config from a file.',
+    );
+  }
+
+  const sourceText = fs.readFileSync(configSourceFilePath, 'utf8');
+  const sourceFile = ts.createSourceFile(configSourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const configObject = findConfigObjectLiteral(sourceFile);
+  if (!configObject) {
+    throw new Error(`Could not locate defineApiKitConfig(...) call in "${configSourceFilePath}".`);
+  }
+
+  const hooksExpression = getProperty(configObject, 'hooks');
+  const hooksAccessSegments = hooksExpression ? getPropertyAccessSegments(hooksExpression) : null;
+  if (!hooksAccessSegments || hooksAccessSegments.length === 0) {
+    throw new Error('hooks must reference an imported identifier or property-access expression, or be a string module path.');
+  }
+
+  const [hooksRootIdentifier, ...hooksPropertyPath] = hooksAccessSegments;
+  if (!hooksRootIdentifier) {
+    throw new Error('hooks have an invalid reference.');
+  }
+
+  const hooksImport = resolveImportedIdentifier(sourceFile, hooksRootIdentifier);
+  if (!hooksImport) {
+    throw new Error(`Could not resolve import for hooks identifier "${hooksRootIdentifier}" in "${configSourceFilePath}".`);
+  }
+
+  return toResolvedImportedValueSource(path.dirname(configSourceFilePath), hooksImport, hooksPropertyPath);
+}
+
 export function resolveResourceValidationSchemaSource(resource: ResourceDefinition): ResolvedImportedValueSource | null {
   const validationSchema = resource.validation?.schema;
   if (!validationSchema) {
@@ -420,6 +471,56 @@ export function resolveResourceValidationSchemaSource(resource: ResourceDefiniti
   }
 
   return toResolvedImportedValueSource(path.dirname(sourceFilePath), schemaImport, schemaPropertyPath);
+}
+
+export function resolveResourceHooksSource(resource: ResourceDefinition): ResolvedHooksSource | null {
+  const hooks = resource.hooks;
+  if (!hooks) {
+    return null;
+  }
+
+  const meta = getResourceMeta(resource);
+  const sourceFilePath = meta?.sourceFile;
+  if (!sourceFilePath) {
+    throw new Error(`Resource "${resource.name}" is missing source-file metadata.`);
+  }
+
+  if (typeof hooks === 'string') {
+    return {
+      sourceFile: path.resolve(path.dirname(sourceFilePath), hooks),
+      accessExpression: '__apiKitResourceHooks',
+      importKind: 'default',
+      importName: '__apiKitResourceHooks',
+      importSourceName: 'default',
+    };
+  }
+
+  const sourceText = fs.readFileSync(sourceFilePath, 'utf8');
+  const sourceFile = ts.createSourceFile(sourceFilePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const resourceObject = findResourceObjectLiteral(sourceFile, resource.name);
+  if (!resourceObject) {
+    throw new Error(`Could not locate defineResource(...) call for resource "${resource.name}" in "${sourceFilePath}".`);
+  }
+
+  const hooksExpression = getProperty(resourceObject, 'hooks');
+  const hooksAccessSegments = hooksExpression ? getPropertyAccessSegments(hooksExpression) : null;
+  if (!hooksAccessSegments || hooksAccessSegments.length === 0) {
+    throw new Error(
+      `Resource "${resource.name}" hooks must reference an imported identifier or property-access expression, or be a string module path.`,
+    );
+  }
+
+  const [hooksRootIdentifier, ...hooksPropertyPath] = hooksAccessSegments;
+  if (!hooksRootIdentifier) {
+    throw new Error(`Resource "${resource.name}" has an invalid hooks reference.`);
+  }
+
+  const hooksImport = resolveImportedIdentifier(sourceFile, hooksRootIdentifier);
+  if (!hooksImport) {
+    throw new Error(`Could not resolve import for hooks identifier "${hooksRootIdentifier}" in "${sourceFilePath}".`);
+  }
+
+  return toResolvedImportedValueSource(path.dirname(sourceFilePath), hooksImport, hooksPropertyPath);
 }
 
 export function resolveDbProviderToken(config: {

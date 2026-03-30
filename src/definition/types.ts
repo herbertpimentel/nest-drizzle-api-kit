@@ -29,6 +29,7 @@ export type ApiKitModuleOptions = {
   dbProviderToken?: string;
   dbSchema?: unknown | string;
   validation?: ApiKitValidationDefinition;
+  hooks?: ResourceHooksSourceDefinition;
   postGenerateCommand?: string;
   cleanOutput?: boolean;
   rootModuleClassName?: string;
@@ -188,6 +189,36 @@ export type ResourceOpenApiDefinition = {
   descriptionByEndpoint?: Partial<Record<ResourceEndpointName, string>>;
 };
 
+export type ResourceHookContext<TInput = unknown, TResult = unknown, TDb = unknown> = {
+  db: TDb;
+  resourceName: string;
+  endpoint: ResourceEndpointName;
+  state: Map<string, unknown>;
+  input: TInput;
+  result?: TResult;
+};
+
+export type ResourceHook<TInput = unknown, TResult = unknown, TDb = unknown> = (
+  context: ResourceHookContext<TInput, TResult, TDb>,
+) => void | Promise<void>;
+
+export type ResourceHookEntry<TInput = unknown, TResult = unknown, TDb = unknown> =
+  | ResourceHook<TInput, TResult, TDb>
+  | {
+      use: ResourceHook<TInput, TResult, TDb>;
+      name?: string;
+      description?: string;
+    };
+
+export type ResourceHookPhaseDefinition = {
+  before?: Array<ResourceHookEntry>;
+  after?: Array<ResourceHookEntry>;
+};
+
+export type ResourceHooksDefinition = ResourceHookPhaseDefinition & Partial<Record<ResourceEndpointName, ResourceHookPhaseDefinition>>;
+
+export type ResourceHooksSourceDefinition = string | ResourceHooksDefinition;
+
 export type ValidationEngineName = 'zod';
 
 export type ValidationSuccessResult<T = unknown> = {
@@ -233,6 +264,7 @@ export type ResourceDefinition = {
   openApi?: ResourceOpenApiDefinition;
   query?: ResourceQueryDefinition;
   validation?: ResourceValidationDefinition;
+  hooks?: ResourceHooksSourceDefinition;
 };
 
 export type ApiKitModuleFactory = {

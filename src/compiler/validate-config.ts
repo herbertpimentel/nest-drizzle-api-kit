@@ -1,7 +1,59 @@
-import type { ApiKitConfig, ResourceDefinition, ResourceEndpointName } from '../definition/types';
+import type {
+  ApiKitConfig,
+  ResourceDefinition,
+  ResourceEndpointName,
+  ResourceHookEntry,
+  ResourceHookPhaseDefinition,
+  ResourceHooksDefinition,
+} from '../definition/types';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function validateHookEntry(entry: ResourceHookEntry, messagePrefix: string): void {
+  if (typeof entry === 'function') {
+    return;
+  }
+
+  assert(typeof entry === 'object' && entry !== null, `${messagePrefix} must be a hook function or a { use, name?, description? } object.`);
+  assert('use' in entry && typeof entry.use === 'function', `${messagePrefix}.use must be a hook function.`);
+
+  if ('name' in entry && entry.name !== undefined) {
+    assert(typeof entry.name === 'string' && entry.name.trim().length > 0, `${messagePrefix}.name must be a non-empty string.`);
+  }
+
+  if ('description' in entry && entry.description !== undefined) {
+    assert(
+      typeof entry.description === 'string' && entry.description.trim().length > 0,
+      `${messagePrefix}.description must be a non-empty string.`,
+    );
+  }
+}
+
+function validateHookPhase(phase: ResourceHookPhaseDefinition | undefined, messagePrefix: string): void {
+  if (!phase) {
+    return;
+  }
+
+  if (phase.before !== undefined) {
+    assert(Array.isArray(phase.before), `${messagePrefix}.before must be an array of hook entries.`);
+    phase.before.forEach((entry, index) => validateHookEntry(entry, `${messagePrefix}.before[${index}]`));
+  }
+
+  if (phase.after !== undefined) {
+    assert(Array.isArray(phase.after), `${messagePrefix}.after must be an array of hook entries.`);
+    phase.after.forEach((entry, index) => validateHookEntry(entry, `${messagePrefix}.after[${index}]`));
+  }
+}
+
+function validateHooksDefinition(hooks: ResourceHooksDefinition, messagePrefix: string): void {
+  validateHookPhase(hooks, messagePrefix);
+
+  const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
+  for (const endpointName of endpointNames) {
+    validateHookPhase(hooks[endpointName], `${messagePrefix}.${endpointName}`);
+  }
 }
 
 function validateResource(resource: ResourceDefinition): void {
@@ -19,13 +71,30 @@ function validateResource(resource: ResourceDefinition): void {
     }
   }
 
+  if (resource.hooks !== undefined) {
+    assert(
+      typeof resource.hooks === 'string' || typeof resource.hooks === 'object',
+      `Resource "${resource.name}" hooks must be a string module path or an imported hooks definition reference.`,
+    );
+    if (typeof resource.hooks === 'string') {
+      assert(resource.hooks.trim().length > 0, `Resource "${resource.name}" hooks cannot be empty.`);
+    } else {
+      assert(resource.hooks !== null, `Resource "${resource.name}" hooks cannot be null.`);
+      validateHooksDefinition(resource.hooks, `Resource "${resource.name}" hooks`);
+    }
+  }
+
   const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
 
   for (const endpointName of endpointNames) {
     const endpoint = resource.endpoints?.[endpointName];
     const endpointGuards = resource.guards?.byEndpoint?.[endpointName];
+    const endpointHooks = typeof resource.hooks === 'object' && resource.hooks !== null ? resource.hooks[endpointName] : undefined;
     if (endpoint === false && endpointGuards?.length) {
       throw new Error(`Resource "${resource.name}" configures guards for disabled endpoint "${endpointName}".`);
+    }
+    if (endpoint === false && (endpointHooks?.before?.length || endpointHooks?.after?.length)) {
+      throw new Error(`Resource "${resource.name}" configures hooks for disabled endpoint "${endpointName}".`);
     }
   }
 
@@ -88,6 +157,15 @@ export function validateApiKitConfig(config: ApiKitConfig): void {
           'validation.engine objects must implement a validate({ schema, input }) function.',
         );
       }
+    }
+  }
+  if (config.hooks !== undefined) {
+    assert(typeof config.hooks === 'string' || typeof config.hooks === 'object', 'hooks, when provided, must be a string module path or an imported hooks definition reference.');
+    if (typeof config.hooks === 'string') {
+      assert(config.hooks.trim().length > 0, 'hooks cannot be empty.');
+    } else {
+      assert(config.hooks !== null, 'hooks cannot be null.');
+      validateHooksDefinition(config.hooks, 'hooks');
     }
   }
 
