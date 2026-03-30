@@ -1,0 +1,31 @@
+  async findOne(id: <%= idType %>, query: <%= context.resource.classNames.findQueryDto %>): Promise<<%= responseDto %>> {
+<% if (hasHooks) { %><% if (validationEnabled) { %>    const input = validateResourceInput(findOneValidationSchema, { params: { id }, query });
+<% } else { %>    const input = { params: { id }, query };
+<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
+<% } %>
+    const context = {
+      db: this.db,
+      resourceName: '<%= context.resource.name %>',
+      endpoint: 'findOne' as const,
+      state: new Map<string, unknown>(),
+      input,
+      result: undefined as <%= responseDto %> | undefined,
+    };
+
+<% for (const line of beforeHookLines) { %><%= line %>
+<% } %>    const row = await new <%= context.resource.classNames.query %>(this.db).findOne(context.input.params.id, context.input.query);
+    context.result = row as <%= responseDto %>;
+<% for (const line of afterHookLines) { %><%= line %>
+<% } %>
+    return context.result as <%= responseDto %>;
+
+<% } else if (validationEnabled) { %>    const input = validateResourceInput(findOneValidationSchema, { params: { id }, query });
+    const row = await new <%= context.resource.classNames.query %>(this.db).findOne(input.params.id, input.query);
+
+
+    return row as <%= responseDto %>;
+<% } else { %>    const row = await new <%= context.resource.classNames.query %>(this.db).findOne(id, query);
+
+
+    return row as <%= responseDto %>;
+<% } %>  }

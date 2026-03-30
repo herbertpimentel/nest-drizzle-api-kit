@@ -1,6 +1,5 @@
-import type { Type, CanActivate } from '@nestjs/common';
-
 export type AnyPgTable = unknown;
+export type Constructor<T = unknown> = abstract new (...args: unknown[]) => T;
 export type DrizzleDb = {
   select: (...args: unknown[]) => {
     from: (table: unknown) => unknown;
@@ -82,7 +81,7 @@ export type ResourceEndpointsDefinition = {
   delete?: ResourceDeleteEndpointDefinition | false;
 };
 
-export type ClassReference<T = unknown> = Type<T>;
+export type ClassReference<T = unknown> = Constructor<T>;
 
 export type InputDtoDefinition =
   | {
@@ -135,7 +134,9 @@ export type ResourceDtoDefinition = {
   delete?: ParamsDtoDefinition;
 };
 
-export type GuardDefinition = Type<CanActivate>;
+export type GuardDefinition = Constructor<{
+  canActivate?: (...args: unknown[]) => unknown;
+}>;
 
 export type ResourceGuardsDefinition = {
   resource?: GuardDefinition[];

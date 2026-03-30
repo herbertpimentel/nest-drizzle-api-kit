@@ -1,0 +1,7 @@
+  private parseBigIntId(value: string): bigint {
+    try {
+      return BigInt(value);
+    } catch {
+      throw new BadRequestException('Validation failed (numeric string is expected)');
+    }
+  }

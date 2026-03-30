@@ -1,0 +1,23 @@
+  async find(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%- findResultType %>> {
+<% if (hasHooks) { %><% if (validationEnabled) { %>    const validatedQuery = validateResourceInput(findValidationSchema, query);
+<% } else { %>    const input = query;
+<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
+<% } %>
+    const context = {
+      db: this.db,
+      resourceName: '<%= context.resource.name %>',
+      endpoint: 'find' as const,
+      state: new Map<string, unknown>(),
+      input: <%= validationEnabled ? 'validatedQuery' : 'input' %>,
+      result: undefined as <%- findResultType %> | undefined,
+    };
+
+<% for (const line of beforeHookLines) { %><%= line %>
+<% } %>    context.result = await new <%= context.resource.classNames.query %>(this.db).findMany(context.input);
+<% for (const line of afterHookLines) { %><%= line %>
+<% } %>
+    return context.result as <%- findResultType %>;
+<% } else if (validationEnabled) { %>    const validatedQuery = validateResourceInput(findValidationSchema, query);
+    return new <%= context.resource.classNames.query %>(this.db).findMany(validatedQuery);
+<% } else { %>    return new <%= context.resource.classNames.query %>(this.db).findMany(query);
+<% } %>  }

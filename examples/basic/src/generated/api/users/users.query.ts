@@ -113,5 +113,4 @@ export class UsersQuery extends GeneratedResourceQueryBase {
         return null;
     }
   }
-
 }

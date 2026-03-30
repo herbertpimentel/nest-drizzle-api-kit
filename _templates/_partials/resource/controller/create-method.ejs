@@ -1,0 +1,5 @@
+@Post()
+@ApiOperation({ operationId: '<%- r.endpoints.create.operationId %>', summary: '<%- summary %>' })
+async create(@Body() body: <%= r.classNames.createDto %>) {
+  return this.service.create(body);
+}

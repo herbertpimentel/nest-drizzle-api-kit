@@ -1,0 +1,5 @@
+@Get()
+@ApiOperation({ operationId: '<%- r.endpoints.find.operationId %>', summary: '<%- summary %>' })
+async find(@Query() query: <%= r.classNames.findQueryDto %>) {
+  return this.service.find(query);
+}

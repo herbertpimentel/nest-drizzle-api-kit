@@ -28,6 +28,5 @@ export class <%= context.resource.classNames.query %> extends GeneratedResourceQ
 <%- context.render.query.resolveConditionMethod %>
 <% if (context.render.query.resolveOrderByMethod) { %>
 <%- context.render.query.resolveOrderByMethod %>
-<% } %>
-
+<% } -%>
 }

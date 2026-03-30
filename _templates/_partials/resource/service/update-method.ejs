@@ -1,0 +1,76 @@
+  async update(id: <%= idType %>, body: <%= context.resource.classNames.updateDto %>): Promise<<%= responseDto %>> {
+<% if (hasHooks) { %><% if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+<% } else { %>    const input = { params: { id }, body };
+<% } %><% for (const line of hookResolutionLines) { %>    <%= line %>
+<% } %>
+<% if (transactional) { %>    return this.db.transaction(async (tx) => {
+      const context = {
+        db: tx,
+        resourceName: '<%= context.resource.name %>',
+        endpoint: 'update' as const,
+        state: new Map<string, unknown>(),
+        input,
+        result: undefined as <%= responseDto %> | undefined,
+      };
+
+<% for (const line of beforeHookLinesTransactional) { %><%= line %>
+<% } %>      const rows = await tx
+        .update(<%= table %>)
+        .set(context.input.body)
+        .where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id))
+        .returning();
+      context.result = rows[0] as <%= responseDto %>;
+<% for (const line of afterHookLinesTransactional) { %><%= line %>
+<% } %>
+      return context.result as <%= responseDto %>;
+    });
+<% } else { %>    const context = {
+      db: this.db,
+      resourceName: '<%= context.resource.name %>',
+      endpoint: 'update' as const,
+      state: new Map<string, unknown>(),
+      input,
+      result: undefined as <%= responseDto %> | undefined,
+    };
+
+<% for (const line of beforeHookLines) { %><%= line %>
+<% } %>    const rows = await this.db
+      .update(<%= table %>)
+      .set(context.input.body)
+      .where(eq(<%= table %>.<%= idFieldName %>, context.input.params.id))
+      .returning();
+    context.result = rows[0] as <%= responseDto %>;
+<% for (const line of afterHookLines) { %><%= line %>
+<% } %>
+    return context.result as <%= responseDto %>;
+<% } %><% } else if (transactional) { %><% if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(<%= table %>)
+        .set(input.body)
+        .where(eq(<%= table %>.<%= idFieldName %>, input.params.id))
+        .returning();
+      return rows[0] as <%= responseDto %>;
+    });
+<% } else { %>    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(<%= table %>)
+        .set(body)
+        .where(eq(<%= table %>.<%= idFieldName %>, id))
+        .returning();
+      return rows[0] as <%= responseDto %>;
+    });
+<% } %><% } else if (validationEnabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+    const rows = await this.db
+      .update(<%= table %>)
+      .set(input.body)
+      .where(eq(<%= table %>.<%= idFieldName %>, input.params.id))
+      .returning();
+    return rows[0] as <%= responseDto %>;
+<% } else { %>    const rows = await this.db
+      .update(<%= table %>)
+      .set(body)
+      .where(eq(<%= table %>.<%= idFieldName %>, id))
+      .returning();
+    return rows[0] as <%= responseDto %>;
+<% } %>  }

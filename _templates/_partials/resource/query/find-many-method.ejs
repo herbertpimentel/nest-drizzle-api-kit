@@ -1,0 +1,45 @@
+  async findMany(query: <%= context.resource.classNames.findQueryDto %>): Promise<<%- returnType %>> {
+<% if (!paginationEnabled) { %>
+<% } %><% if (paginationEnabled) { %>    const page = toPositiveNumber(query.page, <%= pagination.defaultPage %>);
+    const pageSize = Math.min(
+      toPositiveNumber(query.pageSize, <%= pagination.defaultPageSize %>),
+      <%= pagination.maxPageSize %>,
+    );
+
+<% } %>    const where = this.buildWhere(query.search, (filter) => this.resolveCondition(filter));
+<% if (relations.length > 0) { %>    const withRelations = buildRequestedRelations(query.include, [<%- relationNamesLiteral %>] as const);
+<% } %><% if (sorts.length > 0) { %>    const orderByClauses = this.buildOrderBy(
+      query.sort,
+      (fieldName, isDesc) => this.resolveOrderBy(fieldName, isDesc),
+      [<%- defaultSortsLiteral %>],
+    );
+<% } else { %>    const orderByClauses = [];
+<% } %>
+    const items = await this.db.query.<%= context.imports.tableQueryName %>.findMany({
+      ...(where ? { where } : {}),
+<% if (relations.length > 0) { %>      ...(withRelations ? { with: withRelations } : {}),
+<% } %>      ...(orderByClauses.length > 0 ? { orderBy: orderByClauses } : {}),
+<% if (paginationEnabled) { %>
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+
+<% } else { %>
+<% } %>    });
+
+<% if (paginationEnabled) { %>    let totalQuery = this.db.select({ total: count() }).from(<%= context.imports.tableAccessExpression %>).$dynamic();
+    if (where) {
+      totalQuery = totalQuery.where(where);
+    }
+    const totalRows = await totalQuery;
+    const total = totalRows[0]?.total;
+
+    return {
+      items: items as <%= responseDto %>[],
+      page,
+      pageSize,
+      total: Number(total ?? items.length),
+    };
+
+<% } else { %>    return items as <%= responseDto %>[];
+
+<% } %>  }

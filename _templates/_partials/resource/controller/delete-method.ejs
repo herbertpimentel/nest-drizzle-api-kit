@@ -1,0 +1,6 @@
+@Delete(':id')
+@HttpCode(204)
+@ApiOperation({ operationId: '<%- r.endpoints.delete.operationId %>', summary: '<%- summary %>' })
+<%- signature %>
+<%- call %>
+}

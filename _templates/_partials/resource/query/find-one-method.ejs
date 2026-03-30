@@ -1,0 +1,18 @@
+  async findOne(
+    id: <%= idType %>,
+    query: <%= context.resource.classNames.findQueryDto %>,
+  ): Promise<<%= responseDto %> | undefined> {
+    const where = this.buildWhere(
+      query.search,
+      (filter) => this.resolveCondition(filter),
+      eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, id),
+    );
+<% if (relations.length > 0) { %>    const withRelations = buildRequestedRelations(query.include, [<%- relationNamesLiteral %>] as const);
+<% } %>
+    const row = await this.db.query.<%= context.imports.tableQueryName %>.findFirst({
+      ...(where ? { where } : {}),
+<% if (relations.length > 0) { %>      ...(withRelations ? { with: withRelations } : {}),
+<% } %>    });
+
+    return row as <%= responseDto %> | undefined;
+  }

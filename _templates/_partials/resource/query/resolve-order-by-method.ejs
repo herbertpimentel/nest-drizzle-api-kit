@@ -1,0 +1,8 @@
+  private resolveOrderBy(fieldName: string, isDesc: boolean) {
+    switch (fieldName) {
+<% for (const sort of sorts) { %>      case '<%= sort.field %>':
+        return isDesc ? desc(<%= context.imports.tableAccessExpression %>.<%= sort.field %>) : asc(<%= context.imports.tableAccessExpression %>.<%= sort.field %>);
+<% } %>      default:
+        return null;
+    }
+  }
