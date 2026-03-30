@@ -24,8 +24,8 @@ export class UsersController {
   @ApiOperation({ operationId: 'findUser', summary: 'Find user' })
   async findOne(@Param('id', ParseIntPipe) id: number, @Query() query: FindUsersQueryDto) {
     return this.service.findOne(id, query);
-
   }
+
 
 
   @Post()
@@ -39,8 +39,8 @@ export class UsersController {
   @ApiOperation({ operationId: 'updateUser', summary: 'Update user' })
   async update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateUserDto) {
     return this.service.update(id, body);
-
   }
+
 
 
   @Delete(':id')
@@ -48,7 +48,7 @@ export class UsersController {
   @ApiOperation({ operationId: 'deleteUser', summary: 'Delete user' })
   async delete(@Param('id', ParseIntPipe) id: number) {
     await this.service.delete(id);
-
   }
+
 
 }

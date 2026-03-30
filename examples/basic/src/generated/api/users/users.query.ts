@@ -6,6 +6,7 @@ import { users } from '../../../db/users';
 import { schema } from '../common/db';
 
 import type { PaginatedResult } from '../common/types';
+
 import {
   buildAllowedColumnCondition,
   buildRequestedRelations,
@@ -29,6 +30,7 @@ export class UsersQuery extends GeneratedResourceQueryBase {
       toPositiveNumber(query.pageSize, 20),
       100,
     );
+
     const where = this.buildWhere(query.search, (filter) => this.resolveCondition(filter));
     const withRelations = buildRequestedRelations(query.include, ['profile'] as const);
     const orderByClauses = this.buildOrderBy(
@@ -41,8 +43,10 @@ export class UsersQuery extends GeneratedResourceQueryBase {
       ...(where ? { where } : {}),
       ...(withRelations ? { with: withRelations } : {}),
       ...(orderByClauses.length > 0 ? { orderBy: orderByClauses } : {}),
+
       limit: pageSize,
       offset: (page - 1) * pageSize,
+
     });
 
     let totalQuery = this.db.select({ total: count() }).from(users).$dynamic();
@@ -58,6 +62,7 @@ export class UsersQuery extends GeneratedResourceQueryBase {
       pageSize,
       total: Number(total ?? items.length),
     };
+
   }
 
   async findOne(

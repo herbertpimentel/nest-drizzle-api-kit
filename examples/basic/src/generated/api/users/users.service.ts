@@ -6,11 +6,16 @@ import { users } from '../../../db/users';
 
 import { DB_PROVIDER_TOKEN, schema } from '../common/db';
 import type { PaginatedResult } from '../common/types';
+
+
+
 import { FindUsersQueryDto } from './dto/find-users-query.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UsersQuery } from './users.query';
+
+
 
 @Injectable()
 export class UsersService {
@@ -26,6 +31,7 @@ export class UsersService {
   async findOne(id: number, query: FindUsersQueryDto): Promise<UserResponseDto> {
     const row = await new UsersQuery(this.db).findOne(id, query);
 
+
     return row as UserResponseDto;
   }
 
@@ -40,7 +46,6 @@ export class UsersService {
       .set(body)
       .where(eq(users.id, id))
       .returning();
-
     return rows[0] as UserResponseDto;
   }
 
