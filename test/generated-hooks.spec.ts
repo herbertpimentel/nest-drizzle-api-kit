@@ -23,11 +23,14 @@ describe('generated services with hooks', () => {
       expect(serviceSource).toContain("const attachAuditStamp = resolveResourceHook(__apiKitConfigHooksSource.create?.before?.[0]);");
       expect(serviceSource).toContain("const normalizeUserInput = resolveResourceHook(__apiKitResourceHooksSource.create?.before?.[0]);");
       expect(serviceSource).toContain("const publishCreatedEvent = resolveResourceHook(__apiKitResourceHooksSource.create?.after?.[0]);");
+      expect(serviceSource).toContain('return this.db.transaction(async (tx) => {');
       expect(serviceSource).toContain('// Attach audit metadata to the validated create input.');
       expect(serviceSource).toContain('// Normalize the create payload before persisting it.');
+      expect(serviceSource).toContain('db: tx,');
       expect(serviceSource).toContain('await measureExecution(context);');
       expect(serviceSource).toContain('await attachAuditStamp(context);');
       expect(serviceSource).toContain('await normalizeUserInput(context);');
+      expect(serviceSource).toContain('const rows = await tx.insert(users).values(context.input).returning();');
       expect(serviceSource).toContain('await publishCreatedEvent(context);');
       expect(serviceSource).toContain('context.result = rows[0] as UserResponseDto;');
     } finally {

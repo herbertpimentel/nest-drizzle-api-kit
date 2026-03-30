@@ -34,6 +34,7 @@ export type NormalizedHooksDefinition = {
 export type NormalizedEndpointDefinition = {
   name: ResourceEndpointName;
   enabled: boolean;
+  transactional: boolean;
   operationId: string;
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;

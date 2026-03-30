@@ -5,6 +5,7 @@ export type DrizzleDb = {
   select: (...args: unknown[]) => {
     from: (table: unknown) => unknown;
   };
+  transaction: <T>(callback: (tx: DrizzleDb) => Promise<T>) => Promise<T>;
   insert: (table: unknown) => {
     values: (values: unknown) => {
       returning: () => Promise<unknown[]>;
@@ -60,14 +61,17 @@ export type ResourceFindOneEndpointDefinition = {
 
 export type ResourceCreateEndpointDefinition = {
   enabled?: boolean;
+  transactional?: boolean;
 };
 
 export type ResourceUpdateEndpointDefinition = {
   enabled?: boolean;
+  transactional?: boolean;
 };
 
 export type ResourceDeleteEndpointDefinition = {
   enabled?: boolean;
+  transactional?: boolean;
 };
 
 export type ResourceEndpointsDefinition = {

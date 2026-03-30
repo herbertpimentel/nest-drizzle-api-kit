@@ -21,6 +21,9 @@ function hasEndpointHooks(endpoint) {
   const hooks = endpointHooks(endpoint);
   return hooks.before.length > 0 || hooks.after.length > 0;
 }
+function isTransactional(endpoint) {
+  return Boolean(context.resource.endpoints[endpoint] && context.resource.endpoints[endpoint].transactional);
+}
 %><%= context.generatedHeader %>
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
@@ -133,7 +136,26 @@ export class <%= context.resource.classNames.service %> {
 <% } %><% for (const hook of endpointHooks('create').before) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %><% for (const hook of endpointHooks('create').after) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %>
-    const context = {
+<% if (isTransactional('create')) { %>    return this.db.transaction(async (tx) => {
+      const context = {
+        db: tx,
+        resourceName: '<%= context.resource.name %>',
+        endpoint: 'create' as const,
+        state: new Map<string, unknown>(),
+        input: <% if (hasValidation && context.resource.endpoints.create.enabled) { %>validatedBody<% } else { %>input<% } %>,
+        result: undefined as <%= context.resource.classNames.responseDto %> | undefined,
+      };
+
+<% for (const hook of endpointHooks('create').before) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>      const rows = await tx.insert(<%= context.imports.tableAccessExpression %>).values(context.input).returning();
+      context.result = rows[0] as <%= context.resource.classNames.responseDto %>;
+<% for (const hook of endpointHooks('create').after) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>
+      return context.result as <%= context.resource.classNames.responseDto %>;
+    });
+<% } else { %>    const context = {
       db: this.db,
       resourceName: '<%= context.resource.name %>',
       endpoint: 'create' as const,
@@ -150,11 +172,20 @@ export class <%= context.resource.classNames.service %> {
 <% } %>    await <%= hook.constName %>(context);
 <% } %>
     return context.result as <%= context.resource.classNames.responseDto %>;
-<% } else if (hasValidation && context.resource.endpoints.create.enabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
+<% } %><% } else if (isTransactional('create')) { %><% if (hasValidation && context.resource.endpoints.create.enabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
+    return this.db.transaction(async (tx) => {
+      const rows = await tx.insert(<%= context.imports.tableAccessExpression %>).values(validatedBody).returning();
+      return rows[0] as <%= context.resource.classNames.responseDto %>;
+    });
+<% } else { %>    return this.db.transaction(async (tx) => {
+      const rows = await tx.insert(<%= context.imports.tableAccessExpression %>).values(body).returning();
+      return rows[0] as <%= context.resource.classNames.responseDto %>;
+    });
+<% } %><% } else if (hasValidation && context.resource.endpoints.create.enabled) { %>    const validatedBody = validateResourceInput(createValidationSchema, body);
     const rows = await this.db.insert(<%= context.imports.tableAccessExpression %>).values(validatedBody).returning();
+    return rows[0] as <%= context.resource.classNames.responseDto %>;
 <% } else { %>    const rows = await this.db.insert(<%= context.imports.tableAccessExpression %>).values(body).returning();
-<% } %>
-<% if (!hasEndpointHooks('create')) { %>    return rows[0] as <%= context.resource.classNames.responseDto %>;
+    return rows[0] as <%= context.resource.classNames.responseDto %>;
 <% } %>  }
 
   async update(id: <%= idType %>, body: <%= context.resource.classNames.updateDto %>): Promise<<%= context.resource.classNames.responseDto %>> {
@@ -163,7 +194,30 @@ export class <%= context.resource.classNames.service %> {
 <% } %><% for (const hook of endpointHooks('update').before) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %><% for (const hook of endpointHooks('update').after) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %>
-    const context = {
+<% if (isTransactional('update')) { %>    return this.db.transaction(async (tx) => {
+      const context = {
+        db: tx,
+        resourceName: '<%= context.resource.name %>',
+        endpoint: 'update' as const,
+        state: new Map<string, unknown>(),
+        input,
+        result: undefined as <%= context.resource.classNames.responseDto %> | undefined,
+      };
+
+<% for (const hook of endpointHooks('update').before) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>      const rows = await tx
+        .update(<%= context.imports.tableAccessExpression %>)
+        .set(context.input.body)
+        .where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, context.input.params.id))
+        .returning();
+      context.result = rows[0] as <%= context.resource.classNames.responseDto %>;
+<% for (const hook of endpointHooks('update').after) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>
+      return context.result as <%= context.resource.classNames.responseDto %>;
+    });
+<% } else { %>    const context = {
       db: this.db,
       resourceName: '<%= context.resource.name %>',
       endpoint: 'update' as const,
@@ -184,20 +238,36 @@ export class <%= context.resource.classNames.service %> {
 <% } %>    await <%= hook.constName %>(context);
 <% } %>
     return context.result as <%= context.resource.classNames.responseDto %>;
-<% } else if (hasValidation && context.resource.endpoints.update.enabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+<% } %><% } else if (isTransactional('update')) { %><% if (hasValidation && context.resource.endpoints.update.enabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(<%= context.imports.tableAccessExpression %>)
+        .set(input.body)
+        .where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, input.params.id))
+        .returning();
+      return rows[0] as <%= context.resource.classNames.responseDto %>;
+    });
+<% } else { %>    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(<%= context.imports.tableAccessExpression %>)
+        .set(body)
+        .where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, id))
+        .returning();
+      return rows[0] as <%= context.resource.classNames.responseDto %>;
+    });
+<% } %><% } else if (hasValidation && context.resource.endpoints.update.enabled) { %>    const input = validateResourceInput(updateValidationSchema, { params: { id }, body });
     const rows = await this.db
       .update(<%= context.imports.tableAccessExpression %>)
       .set(input.body)
       .where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, input.params.id))
       .returning();
+    return rows[0] as <%= context.resource.classNames.responseDto %>;
 <% } else { %>    const rows = await this.db
       .update(<%= context.imports.tableAccessExpression %>)
       .set(body)
       .where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, id))
       .returning();
-<% } %>
-
-<% if (!hasEndpointHooks('update')) { %>    return rows[0] as <%= context.resource.classNames.responseDto %>;
+    return rows[0] as <%= context.resource.classNames.responseDto %>;
 <% } %>  }
 
   async delete(id: <%= idType %>): Promise<void> {
@@ -206,7 +276,25 @@ export class <%= context.resource.classNames.service %> {
 <% } %><% for (const hook of endpointHooks('delete').before) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %><% for (const hook of endpointHooks('delete').after) { %>    const <%= hook.constName %> = resolveResourceHook(<%= hook.resolveExpression %>);
 <% } %>
-    const context = {
+<% if (isTransactional('delete')) { %>    return this.db.transaction(async (tx) => {
+      const context = {
+        db: tx,
+        resourceName: '<%= context.resource.name %>',
+        endpoint: 'delete' as const,
+        state: new Map<string, unknown>(),
+        input,
+        result: undefined as void | undefined,
+      };
+
+<% for (const hook of endpointHooks('delete').before) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>      await tx.delete(<%= context.imports.tableAccessExpression %>).where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, context.input.params.id));
+<% for (const hook of endpointHooks('delete').after) { %><% if (hook.description) { %>      // <%= hook.description %>
+<% } %>      await <%= hook.constName %>(context);
+<% } %>
+      return;
+    });
+<% } else { %>    const context = {
       db: this.db,
       resourceName: '<%= context.resource.name %>',
       endpoint: 'delete' as const,
@@ -222,7 +310,16 @@ export class <%= context.resource.classNames.service %> {
 <% } %>    await <%= hook.constName %>(context);
 <% } %>
     return;
-<% } else if (hasValidation && context.resource.endpoints.delete.enabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
+<% } %><% } else if (isTransactional('delete')) { %><% if (hasValidation && context.resource.endpoints.delete.enabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
+    return this.db.transaction(async (tx) => {
+      await tx.delete(<%= context.imports.tableAccessExpression %>).where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, input.params.id));
+      return;
+    });
+<% } else { %>    return this.db.transaction(async (tx) => {
+      await tx.delete(<%= context.imports.tableAccessExpression %>).where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, id));
+      return;
+    });
+<% } %><% } else if (hasValidation && context.resource.endpoints.delete.enabled) { %>    const input = validateResourceInput(deleteValidationSchema, { params: { id } });
     await this.db.delete(<%= context.imports.tableAccessExpression %>).where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, input.params.id));
 <% } else { %>    await this.db.delete(<%= context.imports.tableAccessExpression %>).where(eq(<%= context.imports.tableAccessExpression %>.<%= idFieldName %>, id));
 <% } %>  }

@@ -100,7 +100,7 @@ export async function normalizeUserInput(context: ResourceHookContext) {
 
 Context fields:
 - `db`
-  The generated service database instance.
+  The generated service database instance. When the endpoint is transactional, this is the Drizzle transaction object for that execution.
 - `resourceName`
   The resource name from `defineResource({ name })`.
 - `endpoint`
@@ -113,6 +113,39 @@ Context fields:
   Available after the underlying operation. `after` hooks can read or mutate it.
 
 Hooks can be sync or async. The generated service always awaits them.
+
+## Transactional endpoints
+
+Only mutable endpoints support transactions:
+- `create`
+- `update`
+- `delete`
+
+Enable it per endpoint:
+
+```ts
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  endpoints: {
+    create: {
+      transactional: true,
+    },
+    update: {
+      transactional: true,
+    },
+  },
+  hooks: userHooks,
+});
+```
+
+When `transactional: true` is enabled:
+- the generated service wraps the method in `this.db.transaction(async (tx) => { ... })`
+- all hooks for that endpoint run inside the same transaction
+- `context.db` points to `tx`
+- the generated write uses `tx.insert(...)`, `tx.update(...)`, or `tx.delete(...)`
+- if anything throws during hooks or the generated write, Drizzle rolls back the transaction
+- if everything finishes successfully, Drizzle commits it
 
 ## Input shapes
 

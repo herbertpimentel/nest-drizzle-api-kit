@@ -78,6 +78,10 @@ function pathFor(endpoint: ResourceEndpointName): string {
   }
 }
 
+function isMutableEndpoint(endpoint: ResourceEndpointName): endpoint is 'create' | 'update' | 'delete' {
+  return endpoint === 'create' || endpoint === 'update' || endpoint === 'delete';
+}
+
 function isHookMetadataEntry(entry: ResourceHookEntry): entry is Extract<ResourceHookEntry, { use: (...args: never[]) => unknown }> {
   return typeof entry === 'object' && entry !== null && 'use' in entry;
 }
@@ -170,11 +174,13 @@ function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefi
 
   const endpoints = Object.fromEntries(
     endpointNames.map((endpointName) => {
-      const raw = resource.endpoints?.[endpointName];
-      const enabled = raw !== false;
+      const rawValue = resource.endpoints ? (resource.endpoints as Partial<Record<ResourceEndpointName, unknown>>)[endpointName] : undefined;
+      const raw = typeof rawValue === 'object' && rawValue !== null ? rawValue as { enabled?: boolean; transactional?: boolean } : undefined;
+      const enabled = rawValue === false ? false : raw?.enabled ?? true;
       const normalized: NormalizedEndpointDefinition = {
         name: endpointName,
         enabled,
+        transactional: raw && isMutableEndpoint(endpointName) ? raw.transactional ?? false : false,
         operationId: operationIdFor(endpointName, singularName, pluralName),
         method: methodFor(endpointName),
         path: pathFor(endpointName),

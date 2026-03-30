@@ -87,14 +87,30 @@ function validateResource(resource: ResourceDefinition): void {
   const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
 
   for (const endpointName of endpointNames) {
-    const endpoint = resource.endpoints?.[endpointName];
+    const endpointValue = resource.endpoints ? (resource.endpoints as Partial<Record<ResourceEndpointName, unknown>>)[endpointName] : undefined;
+    const endpoint = typeof endpointValue === 'object' && endpointValue !== null
+      ? endpointValue as { enabled?: boolean; transactional?: boolean }
+      : undefined;
     const endpointGuards = resource.guards?.byEndpoint?.[endpointName];
     const endpointHooks = typeof resource.hooks === 'object' && resource.hooks !== null ? resource.hooks[endpointName] : undefined;
-    if (endpoint === false && endpointGuards?.length) {
+    const endpointDisabled = endpointValue === false || endpoint?.enabled === false;
+    if (endpointDisabled && endpointGuards?.length) {
       throw new Error(`Resource "${resource.name}" configures guards for disabled endpoint "${endpointName}".`);
     }
-    if (endpoint === false && (endpointHooks?.before?.length || endpointHooks?.after?.length)) {
+    if (endpointDisabled && (endpointHooks?.before?.length || endpointHooks?.after?.length)) {
       throw new Error(`Resource "${resource.name}" configures hooks for disabled endpoint "${endpointName}".`);
+    }
+
+    if (endpoint && ('transactional' in endpoint)) {
+      assert(typeof endpoint.transactional === 'boolean', `Resource "${resource.name}" endpoint "${endpointName}" transactional must be a boolean.`);
+      assert(
+        endpointName === 'create' || endpointName === 'update' || endpointName === 'delete',
+        `Resource "${resource.name}" endpoint "${endpointName}" does not support transactional.`,
+      );
+    }
+
+    if (endpointDisabled && endpoint && 'transactional' in endpoint && endpoint.transactional) {
+      throw new Error(`Resource "${resource.name}" configures transactional for disabled endpoint "${endpointName}".`);
     }
   }
 

@@ -13,6 +13,7 @@ describe('normalizeApiKitConfig hooks', () => {
     expect(normalized.hooks?.before[0]?.suggestedName).toBe('measureExecution');
     expect(normalized.hooks?.endpoints.create.before[0]?.suggestedName).toBe('attachAuditStamp');
     expect(normalized.hooks?.endpoints.create.before[0]?.description).toBe('Attach audit metadata to the validated create input.');
+    expect(normalized.resources[0]?.endpoints.create.transactional).toBe(true);
     expect(normalized.resources[0]?.hooks?.endpoints.create.before[0]?.suggestedName).toBe('normalizeUserInput');
     expect(normalized.resources[0]?.hooks?.endpoints.create.after[0]?.suggestedName).toBe('publishCreatedEvent');
   });

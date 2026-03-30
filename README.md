@@ -132,7 +132,7 @@ export const usersResource = defineResource({
   endpoints: {
     find: { enabled: true },
     findOne: { enabled: true },
-    create: { enabled: true },
+    create: { enabled: true, transactional: true },
     update: { enabled: true },
     delete: false,
   },
@@ -189,7 +189,7 @@ export const usersResource = defineResource({
 - `route.basePath`
   Overrides the default route segment. Without it, the generator uses the kebab-cased plural resource name.
 - `endpoints`
-  Controls which CRUD handlers are emitted. Disabled endpoints are not generated into the controller.
+  Controls which CRUD handlers are emitted. Disabled endpoints are not generated into the controller. Mutable endpoints also support `transactional: true`, which wraps the generated service operation and its hooks in a Drizzle transaction.
 - `dto.create`
   Controls the generated create DTO from table columns. You can use `include`, `exclude`, `required`, and `optional`.
 - `dto.response`
@@ -435,11 +435,13 @@ export const userHooks = {
 ```
 
 Hook behavior:
+- hooks can be sync or async
 - `before` hooks receive the validated input for that endpoint
 - hooks can mutate `context.input`
 - `after` hooks can read or mutate `context.result`
 - every execution gets a fresh `state: Map<string, unknown>` shared across all hooks in that method call
 - hooks also receive `db`, `resourceName`, and `endpoint`
+- when `create`, `update`, or `delete` is configured with `transactional: true`, `context.db` is the Drizzle transaction object for that execution
 
 Generated order:
 - `config.before`
@@ -457,6 +459,28 @@ Like validation, `hooks` can point to:
 - an imported hook definition object reference
 
 The generated service keeps this explicit and visible, with direct `await hookName(context)` calls inside each method.
+
+### Transactional mutable endpoints
+
+`create`, `update`, and `delete` can opt into a Drizzle transaction:
+
+```ts
+endpoints: {
+  create: {
+    transactional: true,
+  },
+  update: {
+    transactional: true,
+  },
+}
+```
+
+When `transactional: true` is enabled:
+- the generated service wraps the method body in `this.db.transaction(async (tx) => { ... })`
+- hooks for that endpoint also run inside the same transaction
+- `context.db` inside hooks points to `tx`
+- if every hook and the underlying write finish successfully, Drizzle commits
+- if any hook or the generated write throws, Drizzle rolls the transaction back
 
 
 ### Endpoint generation rules
