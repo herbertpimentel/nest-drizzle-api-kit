@@ -52,6 +52,12 @@ export type ResourceTemplateContext = {
     dbProviderToken: string;
     commonTypesImportPath: string;
     commonQueryImportPath: string;
+    commonValidationImportPath: string;
+    validationImportPath?: string;
+    validationImportKind?: 'default' | 'named' | 'namespace';
+    validationImportName?: string;
+    validationImportSourceName?: string;
+    validationAccessExpression?: string;
   };
 };
 
@@ -66,12 +72,21 @@ export type RootTemplateContext = {
   dbSchemaImportName?: string;
   dbSchemaImportSourceName?: string;
   dbSchemaAccessExpression?: string;
+  validation?: {
+    engineName: 'zod' | 'custom';
+    engineImportPath?: string;
+    engineImportKind?: 'default' | 'named' | 'namespace';
+    engineImportName?: string;
+    engineImportSourceName?: string;
+    engineAccessExpression?: string;
+  };
   targets: {
     rootModule: string;
     index: string;
     commonDb: string;
     commonTypes: string;
     commonQuery: string;
+    commonValidation: string;
     commonIndex: string;
   };
   resources: Array<{
@@ -152,6 +167,19 @@ export function buildResourceTemplateContext(
       dbProviderToken,
       commonTypesImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'types.ts')),
       commonQueryImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'query.ts')),
+      commonValidationImportPath: toModuleImport(servicePath, path.join(outputPath, 'common', 'validation.ts')),
+      ...(resource.validation
+        ? {
+            validationImportPath: toModuleImport(
+              servicePath,
+              resource.validation.schemaSource.sourceFile,
+            ),
+            validationImportKind: resource.validation.schemaSource.importKind,
+            validationImportName: resource.validation.schemaSource.importName,
+            validationImportSourceName: resource.validation.schemaSource.importSourceName,
+            validationAccessExpression: resource.validation.schemaSource.accessExpression,
+          }
+        : {}),
     },
   };
 }
@@ -192,12 +220,33 @@ export function buildRootTemplateContext(config: NormalizedApiKitConfig): RootTe
           ),
         }
       : {}),
+    ...(config.validation
+      ? {
+          validation: config.validation.engineSource
+            ? {
+                engineName: 'custom' as const,
+                engineImportPath: toModuleImport(commonDbPath, config.validation.engineSource.sourceFile),
+                engineImportKind: config.validation.engineSource.importKind,
+                engineImportName: config.validation.engineSource.importName,
+                engineImportSourceName: config.validation.engineSource.importSourceName,
+                engineAccessExpression: rewriteRootIdentifier(
+                  config.validation.engineSource.accessExpression,
+                  config.validation.engineSource.importName,
+                  config.validation.engineSource.importName,
+                ),
+              }
+            : {
+                engineName: 'zod' as const,
+              },
+        }
+      : {}),
     targets: {
       rootModule: path.join(config.outputPath, config.rootModuleFileName),
       index: path.join(config.outputPath, 'index.ts'),
       commonDb: commonDbPath,
       commonTypes: commonTypesPath,
       commonQuery: path.join(config.outputPath, 'common', 'query.ts'),
+      commonValidation: path.join(config.outputPath, 'common', 'validation.ts'),
       commonIndex: path.join(config.outputPath, 'common', 'index.ts'),
     },
     resources: config.resources.map((resource) => ({

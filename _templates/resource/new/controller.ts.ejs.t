@@ -45,12 +45,14 @@ import { <%= r.classNames.idParamsDto %> } from './dto/<%= r.fileNames.idParamsD
   @ApiOperation({ operationId: '<%= r.endpoints.findOne.operationId %>', summary: '<%= summary('findOne', `Find ${r.singularName}`) %>' })
 <% if (controller.usesNumberIdPipe) { %>  async findOne(@Param('id', ParseIntPipe) id: number, @Query() query: <%= r.classNames.findQueryDto %>) {
     return this.service.findOne(id, query);
+  }
 <% } else if (controller.usesBigIntIdParser) { %>  async findOne(@Param('id') id: string, @Query() query: <%= r.classNames.findQueryDto %>) {
     return this.service.findOne(this.parseBigIntId(id), query);
+  }
 <% } else { %>  async findOne(@Param() params: <%= r.classNames.idParamsDto %>, @Query() query: <%= r.classNames.findQueryDto %>) {
     return this.service.findOne(params.id, query);
-<% } %>
   }
+<% } %>
 <% } %>
 <% if (r.endpoints.create.enabled) { %>
   @Post()
@@ -64,12 +66,14 @@ import { <%= r.classNames.idParamsDto %> } from './dto/<%= r.fileNames.idParamsD
   @ApiOperation({ operationId: '<%= r.endpoints.update.operationId %>', summary: '<%= summary('update', `Update ${r.singularName}`) %>' })
 <% if (controller.usesNumberIdPipe) { %>  async update(@Param('id', ParseIntPipe) id: number, @Body() body: <%= r.classNames.updateDto %>) {
     return this.service.update(id, body);
+  }
 <% } else if (controller.usesBigIntIdParser) { %>  async update(@Param('id') id: string, @Body() body: <%= r.classNames.updateDto %>) {
     return this.service.update(this.parseBigIntId(id), body);
+  }
 <% } else { %>  async update(@Param() params: <%= r.classNames.idParamsDto %>, @Body() body: <%= r.classNames.updateDto %>) {
     return this.service.update(params.id, body);
-<% } %>
   }
+<% } %>
 <% } %>
 <% if (r.endpoints.delete.enabled) { %>
   @Delete(':id')
@@ -77,11 +81,13 @@ import { <%= r.classNames.idParamsDto %> } from './dto/<%= r.fileNames.idParamsD
   @ApiOperation({ operationId: '<%= r.endpoints.delete.operationId %>', summary: '<%= summary('delete', `Delete ${r.singularName}`) %>' })
 <% if (controller.usesNumberIdPipe) { %>  async delete(@Param('id', ParseIntPipe) id: number) {
     await this.service.delete(id);
+  }
 <% } else if (controller.usesBigIntIdParser) { %>  async delete(@Param('id') id: string) {
     await this.service.delete(this.parseBigIntId(id));
+  }
 <% } else { %>  async delete(@Param() params: <%= r.classNames.idParamsDto %>) {
     await this.service.delete(params.id);
-<% } %>
   }
+<% } %>
 <% } %>
 }

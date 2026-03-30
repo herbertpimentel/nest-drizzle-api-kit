@@ -28,6 +28,7 @@ export type ApiKitModuleOptions = {
   db?: DrizzleDb;
   dbProviderToken?: string;
   dbSchema?: unknown | string;
+  validation?: ApiKitValidationDefinition;
   postGenerateCommand?: string;
   cleanOutput?: boolean;
   rootModuleClassName?: string;
@@ -187,6 +188,41 @@ export type ResourceOpenApiDefinition = {
   descriptionByEndpoint?: Partial<Record<ResourceEndpointName, string>>;
 };
 
+export type ValidationEngineName = 'zod';
+
+export type ValidationSuccessResult<T = unknown> = {
+  success: true;
+  data: T;
+};
+
+export type ValidationFailureResult = {
+  success: false;
+  errors: unknown;
+};
+
+export type ValidationResult<T = unknown> = ValidationSuccessResult<T> | ValidationFailureResult;
+
+export type ValidationContext = {
+  schema: unknown;
+  input: unknown;
+};
+
+export type ValidationEngine = {
+  validate: (context: ValidationContext) => ValidationResult;
+};
+
+export type ValidationEngineDefinition = ValidationEngineName | ValidationEngine | string;
+
+export type ApiKitValidationDefinition = {
+  engine?: ValidationEngineDefinition;
+};
+
+export type ResourceValidationSchemaDefinition = string | unknown;
+
+export type ResourceValidationDefinition = {
+  schema: ResourceValidationSchemaDefinition;
+};
+
 export type ResourceDefinition = {
   name: string;
   table: AnyPgTable;
@@ -196,6 +232,7 @@ export type ResourceDefinition = {
   guards?: ResourceGuardsDefinition;
   openApi?: ResourceOpenApiDefinition;
   query?: ResourceQueryDefinition;
+  validation?: ResourceValidationDefinition;
 };
 
 export type ApiKitModuleFactory = {

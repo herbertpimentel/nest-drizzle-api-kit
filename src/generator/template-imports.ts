@@ -28,6 +28,10 @@ export function buildControllerImportConfig(resource: NormalizedResourceDefiniti
     commonImports.push('BadRequestException');
   }
 
+  if (resource.validation && !commonImports.includes('BadRequestException')) {
+    commonImports.push('BadRequestException');
+  }
+
   return {
     commonImports,
     guardDecorator: guardNames.length > 0 ? `@UseGuards(${guardNames.join(', ')})` : null,

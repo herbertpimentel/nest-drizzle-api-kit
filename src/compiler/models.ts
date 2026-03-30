@@ -53,6 +53,15 @@ export type NormalizedResourceDefinition = {
   guards: ResourceGuardsDefinition;
   query: Required<Pick<ResourceQueryDefinition, 'pagination'>> & Omit<ResourceQueryDefinition, 'pagination'>;
   openApi: Required<Pick<ResourceOpenApiDefinition, 'enabled'>> & ResourceOpenApiDefinition;
+  validation?: {
+    schemaSource: {
+      sourceFile: string;
+      accessExpression: string;
+      importKind: 'default' | 'named' | 'namespace';
+      importName: string;
+      importSourceName: string;
+    };
+  };
   generatedDtos: {
     createFields: GeneratedDtoField[];
     responseFields: GeneratedDtoField[];
@@ -80,6 +89,16 @@ export type NormalizedApiKitConfig = Omit<ApiKitConfig, 'resources'> & {
     importKind: 'default' | 'named' | 'namespace';
     importName: string;
     importSourceName: string;
+  };
+  validation?: {
+    engineName: 'zod' | 'custom';
+    engineSource?: {
+      sourceFile: string;
+      accessExpression: string;
+      importKind: 'default' | 'named' | 'namespace';
+      importName: string;
+      importSourceName: string;
+    };
   };
   postGenerateCommand?: string;
   resources: NormalizedResourceDefinition[];

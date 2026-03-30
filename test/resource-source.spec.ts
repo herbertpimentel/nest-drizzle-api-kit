@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveResourceSource } from '../src/compiler/resource-source';
+import { resolveResourceSource, resolveResourceValidationSchemaSource } from '../src/compiler/resource-source';
 
 describe('resolveResourceSource', () => {
   it('supports a direct table identifier', async () => {
@@ -30,5 +30,24 @@ describe('resolveResourceSource', () => {
     expect(source.table.localName).toBe('tabelaCusta');
     expect(source.tableAccessExpression).toBe('tabelaCusta');
     expect(source.tableQueryName).toBe('tabelaCusta');
+  });
+
+  it('resolves imported validation schema maps from the resource file', async () => {
+    const { validationMapResource } = await import('./fixtures/resource-source/validation-map.resource');
+    const source = resolveResourceValidationSchemaSource(validationMapResource);
+
+    expect(source?.importKind).toBe('named');
+    expect(source?.importName).toBe('userValidationSchemas');
+    expect(source?.accessExpression).toBe('userValidationSchemas');
+  });
+
+  it('resolves string validation schema modules as default imports', async () => {
+    const { validationStringResource } = await import('./fixtures/resource-source/validation-string.resource');
+    const source = resolveResourceValidationSchemaSource(validationStringResource);
+
+    expect(source?.importKind).toBe('default');
+    expect(source?.importName).toBe('__apiKitValidationSchema');
+    expect(source?.accessExpression).toBe('__apiKitValidationSchema');
+    expect(source?.sourceFile.replace(/\\/g, '/')).toMatch(/test\/fixtures\/resource-source\/validation-schemas$/);
   });
 });

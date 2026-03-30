@@ -2,7 +2,7 @@ import type { ApiKitConfig, ResourceDefinition, ResourceEndpointName } from '../
 import type { NormalizedApiKitConfig, NormalizedEndpointDefinition, NormalizedResourceDefinition } from './models';
 import { buildCreateDtoFields, buildIdParamField, buildResponseDtoFields } from './dto-fields';
 import { kebabCase, pascalCase, pluralize, singularize } from './naming';
-import { resolveDbSchemaType, resolveResourceSource } from './resource-source';
+import { resolveDbSchemaType, resolveResourceSource, resolveResourceValidationSchemaSource, resolveValidationEngineSource } from './resource-source';
 import { validateApiKitConfig } from './validate-config';
 
 const endpointNames: ResourceEndpointName[] = ['find', 'findOne', 'create', 'update', 'delete'];
@@ -123,6 +123,13 @@ function normalizeResource(resource: ResourceDefinition): NormalizedResourceDefi
       enabled: resource.openApi?.enabled ?? true,
       ...resource.openApi,
     },
+    ...(resource.validation?.schema
+      ? {
+          validation: {
+            schemaSource: resolveResourceValidationSchemaSource(resource)!,
+          },
+        }
+      : {}),
     generatedDtos: {
       createFields: buildCreateDtoFields(resource),
       responseFields: buildResponseDtoFields(resource),
@@ -145,10 +152,24 @@ export function normalizeApiKitConfig(config: ApiKitConfig): NormalizedApiKitCon
 
   const resources = config.resources.filter((item): item is ResourceDefinition => typeof item !== 'string');
   const dbSchemaSource = resolveDbSchemaType(config);
+  const hasValidationSchemas = resources.some((resource) => Boolean(resource.validation?.schema));
+  const validationEngineSource = resolveValidationEngineSource(config);
   return {
     outputPath: config.outputPath,
     ...(config.dbProviderToken ? { dbProviderToken: config.dbProviderToken } : {}),
     ...(dbSchemaSource ? { dbSchemaSource } : {}),
+    ...((validationEngineSource || hasValidationSchemas)
+      ? {
+          validation: validationEngineSource?.kind === 'custom'
+            ? {
+                engineName: 'custom',
+                engineSource: validationEngineSource,
+              }
+            : {
+                engineName: 'zod',
+              },
+        }
+      : {}),
     ...(config.postGenerateCommand ? { postGenerateCommand: config.postGenerateCommand } : {}),
     cleanOutput: config.cleanOutput ?? true,
     rootModuleClassName: config.rootModuleClassName ?? 'GeneratedApiModule',

@@ -145,6 +145,9 @@ export const usersResource = defineResource({
       exclude: ['passwordHash'],
     },
   },
+  validation: {
+    schema: './users.validation',
+  },
   query: {
     pagination: {
       defaultPage: 1,
@@ -190,6 +193,8 @@ export const usersResource = defineResource({
   Controls the generated create DTO from table columns. You can use `include`, `exclude`, `required`, and `optional`.
 - `dto.response`
   Controls which table columns appear in the generated response DTO.
+- `validation.schema`
+  Adds a validation step before the generated endpoint calls the service. It can point to a module path whose default export is a Zod schema, or to an imported schema object. It can also point to an object keyed by endpoint name such as `create`, `update`, or `find`.
 - `query.pagination`
   Enables or disables paginated `find`, and lets you set `defaultPage`, `defaultPageSize`, and `maxPageSize`.
 - `query.filters`
@@ -279,6 +284,96 @@ dto: {
   },
 }
 ```
+
+### Validation schema
+
+Validation is configured in two places:
+- config-level `validation.engine`
+- resource-level `validation.schema`
+
+Current engine support:
+- `zod`
+- custom engines through the `ValidationEngine` interface
+
+Default behavior is intentionally minimal:
+- if a resource declares `validation.schema` and you do nothing else, the generated code uses the built-in Zod engine automatically
+- You need to point to a Zod schema and the generated code will ensure it pass your validation schema before execute the underling endpoint code
+- advanced custom-engine details live in [CUSTOM_VALIDATION.md](./CUSTOM_VALIDATION.md)
+
+Shared schema for the whole resource:
+
+```ts
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  validation: {
+    schema: './users.validation',
+  },
+});
+```
+
+That module should default-export a Zod schema.
+
+Zero-config default setup:
+
+```ts
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  validation: {
+    schema: './users.validation',
+  },
+});
+```
+
+No config-level validation block is required for that setup.
+
+Endpoint-based schemas:
+
+```ts
+import { userValidationSchemas } from './users.validation';
+
+export const usersResource = defineResource({
+  name: 'user',
+  table: users,
+  validation: {
+    schema: userValidationSchemas,
+  },
+});
+```
+
+Example endpoint map:
+
+```ts
+export const userValidationSchemas = {
+  find: z.object({
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).optional(),
+  }),
+  create: z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+  }),
+  update: z.object({
+    params: z.object({
+      id: z.number().int().positive(),
+    }),
+    body: z.object({
+      name: z.string().min(1).optional(),
+    }),
+  }),
+};
+```
+
+Current generated validation inputs are:
+- `find` -> query object
+- `findOne` -> `{ params, query }`
+- `create` -> body object
+- `update` -> `{ params, body }`
+- `delete` -> `{ params }`
+
+The generated controller adds a simple validation call before the underlying service operation. If the schema fails, it throws `BadRequestException` with your schema messages.
+
 
 ### Endpoint generation rules
 
