@@ -6,7 +6,7 @@ import { ensureConfigFileExists } from './config-file';
 
 function providerInstruction(token: string | undefined): string {
   const resolved = token?.trim() || 'YOUR_DB_TOKEN';
-  return `Target project requirement: register a Nest provider for ${JSON.stringify(resolved)} before using the generated services.`;
+  return `Your project requirement: register a Nest provider for ${JSON.stringify(resolved)} before using the generated services.`;
 }
 
 export async function generateCommand(configPath?: string): Promise<void> {

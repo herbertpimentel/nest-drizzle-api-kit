@@ -195,7 +195,7 @@ async function updateConfigResources(configPath: string, resourcePaths: string[]
   const resourcesArray = findResourcesProperty(sourceFile);
 
   if (!resourcesArray) {
-    throw new Error(`Could not locate a literal "resources" array in "${configPath}".`);
+    throw new Error(`Could not locate the property "resources" array in "${configPath}".`);
   }
 
   const existingStringValues = new Set(
@@ -363,6 +363,6 @@ export async function scanCommand(configPath = 'nest-drizzle-api-kit.config.ts')
 
   const result = await scaffoldScannedResources(resolvedConfigPath, selectedTables);
   process.stdout.write(
-    `Scaffolded ${result.createdFiles.length} resource file(s) and added ${result.updatedConfigEntries} resource entry(ies) to ${resolvedConfigPath}\n`,
+    `Scaffolded ${result.createdFiles.length} resource file(s) and added ${result.updatedConfigEntries} and added to ${resolvedConfigPath}\n`,
   );
 }

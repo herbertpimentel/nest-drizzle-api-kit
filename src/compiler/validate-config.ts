@@ -140,7 +140,7 @@ export function validateApiKitConfig(config: ApiKitConfig): void {
   assert(Array.isArray(config.resources) && config.resources.length > 0, 'resources must be a non-empty array.');
   assert(
     typeof config.dbProviderToken === 'string' && config.dbProviderToken.trim().length > 0,
-    'dbProviderToken is required. Your target NestJS project must provide a matching provider token.',
+    'dbProviderToken is required. Your NestJS project must provide a matching provider token.',
   );
   if (config.dbSchema !== undefined) {
     assert(
